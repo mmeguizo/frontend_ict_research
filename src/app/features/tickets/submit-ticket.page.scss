@@ -1,0 +1,490 @@
+:host {
+  display: block;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* ── Mode Chooser ────────────────────────────────────────── */
+.mode-chooser {
+  padding: 40px 20px;
+  text-align: center;
+
+  .chooser-header {
+    margin-bottom: 40px;
+
+    h2 {
+      font-size: 28px;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin-bottom: 8px;
+    }
+
+    p {
+      font-size: 16px;
+      color: #8c8c8c;
+      margin: 0;
+    }
+  }
+
+  .chooser-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 24px;
+    max-width: 800px;
+    margin: 0 auto;
+  }
+
+  .chooser-card {
+    background: #fff;
+    border: 2px solid #f0f0f0;
+    border-radius: 16px;
+    padding: 32px 24px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    text-align: center;
+
+    &:hover {
+      border-color: #1890ff;
+      box-shadow: 0 8px 24px rgba(24, 144, 255, 0.12);
+      transform: translateY(-4px);
+    }
+
+    &.ai-card:hover {
+      border-color: #722ed1;
+      box-shadow: 0 8px 24px rgba(114, 46, 209, 0.15);
+    }
+
+    .card-icon {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+      font-size: 32px;
+
+      &.manual-icon {
+        background: linear-gradient(135deg, #e6f7ff, #bae7ff);
+        color: #1890ff;
+      }
+
+      &.ai-icon {
+        background: linear-gradient(135deg, #f9f0ff, #d3adf7);
+        color: #722ed1;
+        animation: pulse-glow 2s ease-in-out infinite;
+      }
+    }
+
+    h3 {
+      font-size: 20px;
+      font-weight: 600;
+      color: #1a1a2e;
+      margin-bottom: 8px;
+    }
+
+    > p {
+      font-size: 14px;
+      color: #8c8c8c;
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+
+    .card-features {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+      margin: 0 auto 24px;
+      max-width: 260px;
+
+      span {
+        font-size: 13px;
+        color: #595959;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+
+        i {
+          color: #52c41a;
+          font-size: 14px;
+        }
+      }
+    }
+
+    .card-btn {
+      width: 100%;
+    }
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(114, 46, 209, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 16px 4px rgba(114, 46, 209, 0.15);
+  }
+}
+
+/* ── AI Mode Active ──────────────────────────────────────── */
+.ai-mode-active {
+  text-align: center;
+  padding: 48px 24px;
+
+  .ai-mode-icon {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #f9f0ff, #d3adf7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 20px;
+    font-size: 36px;
+    color: #722ed1;
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  h3 {
+    font-size: 22px;
+    font-weight: 600;
+    color: #1a1a2e;
+    margin-bottom: 8px;
+  }
+
+  p {
+    font-size: 14px;
+    color: #8c8c8c;
+    max-width: 480px;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+}
+
+/* ── Form Mode Header ────────────────────────────────────── */
+.form-mode-header {
+  margin-bottom: 12px;
+}
+
+.section-card {
+  margin-bottom: 16px;
+
+  h4 {
+    font-weight: 600;
+    color: #1890ff;
+    margin-bottom: 12px;
+    font-size: 14px;
+  }
+}
+
+.ticket-form {
+  .ticket-date {
+    margin-bottom: 12px;
+    color: #666;
+  }
+
+  .others {
+    margin-top: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    span {
+      min-width: 56px;
+      color: #555;
+    }
+  }
+
+  .checkbox-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px 16px;
+    margin-bottom: 8px;
+  }
+
+  .actions {
+    margin-top: 16px;
+    display: flex;
+    gap: 8px;
+  }
+}
+
+/* ── Priority Suggestion Section ─────────────────────────── */
+.priority-section {
+  margin-bottom: 16px;
+  padding: 16px 20px;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+
+  h4 {
+    font-weight: 600;
+    color: #1890ff;
+    margin-bottom: 12px;
+    font-size: 14px;
+  }
+}
+
+.priority-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+
+  nz-select {
+    min-width: 160px;
+  }
+}
+
+.suggestion-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: #e6f7ff;
+  border: 1px solid #91d5ff;
+  border-radius: 16px;
+  font-size: 13px;
+  color: #096dd9;
+  white-space: nowrap;
+  transition: opacity 0.2s;
+
+  span[nz-icon] {
+    font-size: 14px;
+  }
+
+  nz-tag {
+    margin: 0;
+  }
+
+  &.overridden {
+    opacity: 0.65;
+    background: #f5f5f5;
+    border-color: #d9d9d9;
+    color: #8c8c8c;
+  }
+}
+
+.suggestion-reasons {
+  margin-top: 12px;
+
+  nz-alert {
+    ::ng-deep .ant-alert-message {
+      font-size: 13px;
+    }
+  }
+}
+
+/* ── AI Smart Suggestions Section ────────────────────────── */
+.ai-section {
+  margin-bottom: 16px;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #f9f0ff 0%, #e6f7ff 100%);
+  border: 1px solid #d3adf7;
+  border-radius: 6px;
+
+  .ai-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+
+  .ai-hint {
+    font-size: 12px;
+    color: #8c8c8c;
+  }
+
+  .ai-loading-placeholder {
+    height: 80px;
+    width: 100%;
+  }
+
+  .ai-collapse {
+    margin-bottom: 8px;
+  }
+
+  .ai-analysis {
+    .analysis-row {
+      margin-bottom: 10px;
+      line-height: 1.6;
+
+      strong {
+        margin-right: 6px;
+        color: #262626;
+      }
+
+      .solutions-list {
+        margin: 4px 0 0 18px;
+        padding: 0;
+        li {
+          margin-bottom: 2px;
+        }
+      }
+
+      nz-tag {
+        margin-right: 4px;
+      }
+    }
+
+    .clean-ticket-row {
+      background: #f6ffed;
+      border: 1px solid #b7eb8f;
+      border-radius: 6px;
+      padding: 12px;
+
+      .clean-ticket-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+
+      .clean-ticket-text {
+        color: #333;
+        line-height: 1.7;
+        white-space: pre-wrap;
+      }
+    }
+  }
+
+  .similar-ticket-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    width: 100%;
+
+    .similar-ticket-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .ticket-number {
+      font-size: 12px;
+      color: #8c8c8c;
+      margin-left: auto;
+    }
+
+    .ticket-title {
+      font-size: 13px;
+      color: #595959;
+    }
+  }
+
+  .related-article-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+
+    .article-title {
+      flex: 1;
+      font-size: 13px;
+      color: #595959;
+    }
+
+    .article-stats {
+      font-size: 12px;
+      color: #bfbfbf;
+      white-space: nowrap;
+    }
+  }
+}
+
+/* ── NLP Quick Parse Container (Feature 1a) ───────────────── */
+.nlp-quick-parse-container {
+  margin-bottom: 24px;
+  background: linear-gradient(135deg, #f9f0ff 0%, #ffffff 100%);
+  border: 1px solid #d3adf7;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(114, 46, 209, 0.05);
+  overflow: hidden;
+
+  nz-collapse {
+    background: transparent !important;
+  }
+
+  ::ng-deep .ant-collapse-header {
+    background: transparent !important;
+    padding: 12px 16px !important;
+    border-bottom: none !important;
+  }
+
+  .nlp-header-text {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: #531dab;
+  }
+
+  .nlp-content {
+    padding: 0 16px 16px;
+  }
+
+  .nlp-subtitle {
+    font-size: 13px;
+    color: #595959;
+    margin-bottom: 12px;
+    line-height: 1.5;
+
+    em {
+      color: #722ed1;
+      font-style: italic;
+    }
+  }
+
+  .nlp-input-row {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+
+    @media (max-width: 768px) {
+      flex-direction: column;
+      align-items: stretch;
+    }
+  }
+
+  .nlp-textarea {
+    flex: 1;
+    border: 1px solid #d9d9d9;
+    border-radius: 6px;
+    transition: all 0.3s;
+
+    &:focus,
+    &:hover {
+      border-color: #722ed1;
+      box-shadow: 0 0 0 2px rgba(114, 46, 209, 0.1);
+    }
+  }
+
+  .nlp-btn {
+    border-radius: 6px;
+    background: #722ed1;
+    border-color: #722ed1;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: auto;
+    padding: 10px 16px;
+    align-self: normal;
+
+    &:hover,
+    &:focus {
+      background: #8540de;
+      border-color: #8540de;
+      color: #fff;
+    }
+
+    &[disabled] {
+      background: #f5f5f5;
+      border-color: #d9d9d9;
+      color: rgba(0, 0, 0, 0.25);
+    }
+  }
+}

@@ -1,0 +1,1583 @@
+<nz-spin [nzSpinning]="loading()">
+  @if (ticket(); as t) {
+    <div class="ticket-detail-container">
+      <!-- Header Card -->
+      <nz-card [nzTitle]="headerTemplate" [nzExtra]="headerActions">
+        <nz-descriptions [nzColumn]="2" nzBordered>
+          <nz-descriptions-item nzTitle="Ticket Number">
+            {{ t.ticketNumber }}
+          </nz-descriptions-item>
+          <nz-descriptions-item nzTitle="Type">
+            <div style="display: flex; align-items: center; gap: 8px">
+              <nz-tag [nzColor]="t.type === 'MIS' ? 'blue' : 'green'">
+                {{ t.type }}
+              </nz-tag>
+              @if (canEditTypePriority()) {
+                <button
+                  nz-button
+                  nzType="text"
+                  nzSize="small"
+                  nz-tooltip
+                  nzTooltipTitle="Change ticket type"
+                  (click)="openTypeEditModal()"
+                >
+                  <nz-icon nzType="edit" nzTheme="outline"></nz-icon>
+                </button>
+              }
+            </div>
+          </nz-descriptions-item>
+          <nz-descriptions-item nzTitle="Status">
+            <nz-tag [nzColor]="getStatusColor(t.status)">
+              {{ t.status.replace('_', ' ') }}
+            </nz-tag>
+          </nz-descriptions-item>
+          <nz-descriptions-item nzTitle="Priority">
+            <div style="display: flex; align-items: center; gap: 8px">
+              <nz-tag [nzColor]="getPriorityColor(t.priority)">
+                {{ t.priority }}
+              </nz-tag>
+              @if (canEditTypePriority()) {
+                <button
+                  nz-button
+                  nzType="text"
+                  nzSize="small"
+                  nz-tooltip
+                  nzTooltipTitle="Change priority"
+                  (click)="openPriorityEditModal()"
+                >
+                  <nz-icon nzType="edit" nzTheme="outline"></nz-icon>
+                </button>
+              }
+            </div>
+          </nz-descriptions-item>
+          <nz-descriptions-item nzTitle="Created By">
+            {{ t.createdBy.name }} ({{ t.createdBy.email }})
+          </nz-descriptions-item>
+          <nz-descriptions-item nzTitle="Created At">
+            {{ t.createdAt | date }}
+          </nz-descriptions-item>
+          <nz-descriptions-item nzTitle="Due Date" [nzSpan]="1">
+            {{ formatDate(t.dueDate) }}
+          </nz-descriptions-item>
+          <nz-descriptions-item nzTitle="Control Number" [nzSpan]="1">
+            {{ t.controlNumber || 'N/A' }}
+          </nz-descriptions-item>
+        </nz-descriptions>
+
+        <nz-divider></nz-divider>
+
+        <!-- Description — inline editable for ticket creator on open tickets -->
+        <div class="desc-header">
+          <h4 style="margin: 0">Description</h4>
+          @if (canEditDescription() && !editingDescription()) {
+            <button
+              nz-button
+              nzType="text"
+              nzSize="small"
+              class="desc-edit-btn"
+              nz-tooltip
+              nzTooltipTitle="Edit description"
+              (click)="openDescEdit()"
+            >
+              <span nz-icon nzType="edit" nzTheme="outline"></span> Edit
+            </button>
+          }
+        </div>
+
+        @if (editingDescription()) {
+          <div class="desc-editor">
+            <textarea
+              nz-input
+              [nzAutosize]="{ minRows: 4, maxRows: 12 }"
+              [ngModel]="descriptionDraft()"
+              (ngModelChange)="descriptionDraft.set($event)"
+              [ngModelOptions]="{ standalone: true }"
+              placeholder="Add more details about your issue…"
+            ></textarea>
+            <div class="desc-editor-actions">
+              <button
+                nz-button
+                nzType="primary"
+                nzSize="small"
+                [nzLoading]="savingDescription()"
+                [disabled]="!descriptionDraft().trim()"
+                (click)="saveDescription()"
+              >
+                <span nz-icon nzType="save"></span> Save
+              </button>
+              <button
+                nz-button
+                nzType="default"
+                nzSize="small"
+                [disabled]="savingDescription()"
+                (click)="cancelDescEdit()"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        } @else {
+          <p style="white-space: pre-wrap">{{ t.description }}</p>
+        }
+      </nz-card>
+
+      <!-- ITS Ticket Details Card -->
+      @if (t.type === 'ITS' && t.itsTicket) {
+        <nz-card nzTitle="ICT Support Request Details" class="its-details-card">
+          @if (t.itsTicket.borrowRequest) {
+            <div class="its-section">
+              <div class="its-section-header">
+                <span nz-icon nzType="inbox" nzTheme="outline"></span>
+                <span>Borrow Request</span>
+              </div>
+              @if (t.itsTicket.borrowDetails) {
+                <pre class="its-details-text">{{ t.itsTicket.borrowDetails }}</pre>
+              }
+            </div>
+          }
+
+          @if (
+            t.itsTicket.maintenanceDesktopLaptop ||
+            t.itsTicket.maintenanceInternetNetwork ||
+            t.itsTicket.maintenancePrinter ||
+            t.itsTicket.maintenanceDetails
+          ) {
+            @if (t.itsTicket.borrowRequest) {
+              <nz-divider></nz-divider>
+            }
+            <div class="its-section">
+              <div class="its-section-header">
+                <span nz-icon nzType="tool" nzTheme="outline"></span>
+                <span>Maintenance &amp; Repair</span>
+              </div>
+              <div class="its-category-tags">
+                @if (t.itsTicket.maintenanceDesktopLaptop) {
+                  <nz-tag nzColor="blue"
+                    ><span nz-icon nzType="desktop"></span> Desktop / Laptop PC</nz-tag
+                  >
+                }
+                @if (t.itsTicket.maintenanceInternetNetwork) {
+                  <nz-tag nzColor="green"
+                    ><span nz-icon nzType="wifi"></span> Internet / Network</nz-tag
+                  >
+                }
+                @if (t.itsTicket.maintenancePrinter) {
+                  <nz-tag nzColor="orange"><span nz-icon nzType="printer"></span> Printer</nz-tag>
+                }
+              </div>
+              @if (t.itsTicket.maintenanceDetails) {
+                <pre class="its-details-text" style="margin-top: 12px">{{
+                  t.itsTicket.maintenanceDetails
+                }}</pre>
+              }
+            </div>
+          }
+
+          @if (
+            !t.itsTicket.borrowRequest &&
+            !t.itsTicket.maintenanceDesktopLaptop &&
+            !t.itsTicket.maintenanceInternetNetwork &&
+            !t.itsTicket.maintenancePrinter &&
+            !t.itsTicket.maintenanceDetails
+          ) {
+            <nz-empty nzNotFoundContent="No ITS-specific details available"></nz-empty>
+          }
+        </nz-card>
+      }
+
+      <!-- Approval Status Card -->
+      <nz-card nzTitle="Review & Approval Workflow" class="approval-card">
+        @if (ticket()?.status === 'CANCELLED') {
+          <nz-alert
+            nzType="error"
+            nzMessage="Ticket Rejected/Cancelled"
+            [nzDescription]="rejectedDescriptionTpl"
+            [nzShowIcon]="true"
+          ></nz-alert>
+          <ng-template #rejectedDescriptionTpl>
+            <div>
+              <p>
+                This ticket has been rejected or cancelled. Please check the status history for
+                details.
+              </p>
+              @if (canReopenTicket()) {
+                <button
+                  nz-button
+                  nzType="primary"
+                  (click)="openReopenModal()"
+                  style="margin-top: 12px"
+                >
+                  <i nz-icon nzType="reload"></i>
+                  Reopen & Resubmit Ticket
+                </button>
+              }
+            </div>
+          </ng-template>
+        } @else if (isAwaitingSecretaryReview()) {
+          <nz-alert
+            nzType="info"
+            nzMessage="For Secretary Review"
+            [nzDescription]="secretaryReviewDescTpl"
+            [nzShowIcon]="true"
+          ></nz-alert>
+          <ng-template #secretaryReviewDescTpl>
+            <div>
+              <p>This ticket is awaiting review by the secretary.</p>
+              @if (canReviewAsSecretary()) {
+                <div class="approval-actions" style="margin-top: 12px">
+                  <button nz-button nzType="primary" (click)="openSecretaryReviewModal()">
+                    <i nz-icon nzType="audit"></i>
+                    Review Ticket
+                  </button>
+                </div>
+              }
+            </div>
+          </ng-template>
+        } @else if (isAwaitingDirectorApproval()) {
+          <nz-alert
+            nzType="info"
+            nzMessage="Awaiting Director Approval"
+            [nzDescription]="directorApprovalDescTpl"
+            [nzShowIcon]="true"
+          ></nz-alert>
+          <ng-template #directorApprovalDescTpl>
+            <div>
+              <p>Secretary has reviewed. Waiting for director approval.</p>
+              @if (canApproveAsDirector()) {
+                <div class="approval-actions" style="margin-top: 12px">
+                  <button nz-button nzType="primary" (click)="openDirectorApprovalModal()">
+                    <i nz-icon nzType="check-circle"></i>
+                    Review & Approve
+                  </button>
+                </div>
+              }
+            </div>
+          </ng-template>
+        } @else if (isFullyApproved()) {
+          <nz-alert
+            nzType="success"
+            nzMessage="Fully Endorsed"
+            nzDescription="This ticket has been approved and assigned to the office head."
+            [nzShowIcon]="true"
+          ></nz-alert>
+        }
+
+        <div class="approval-timeline">
+          <nz-descriptions [nzColumn]="1" nzBordered>
+            <nz-descriptions-item nzTitle="Secretary Review">
+              @if (t.secretaryReviewedAt) {
+                <span class="approved">
+                  ✓ Reviewed on {{ formatDate(t.secretaryReviewedAt) }}
+                </span>
+              } @else {
+                <span class="pending">For Review</span>
+              }
+            </nz-descriptions-item>
+            <nz-descriptions-item nzTitle="Director Approval">
+              @if (t.directorApprovedAt) {
+                <span class="approved"> ✓ Approved on {{ formatDate(t.directorApprovedAt) }} </span>
+              } @else {
+                <span class="pending">Pending</span>
+              }
+            </nz-descriptions-item>
+          </nz-descriptions>
+        </div>
+      </nz-card>
+
+      <!-- SLA Processing Time Tracker (staff only) -->
+      @if (!isRegularUser() && slaTimeline(); as sla) {
+        <nz-card class="sla-tracker-card">
+          <div class="sla-tracker-header">
+            <div class="sla-tracker-title">
+              <span nz-icon nzType="dashboard" nzTheme="outline"></span>
+              SLA Processing Time Tracker
+            </div>
+            <nz-tag [nzColor]="sla.isOverdue ? 'red' : 'green'">
+              {{ sla.isOverdue ? 'SLA Breached' : 'On Track' }}
+            </nz-tag>
+          </div>
+
+          <!-- Overall Progress Bar -->
+          <div class="sla-progress-section">
+            <div class="sla-progress-header">
+              <span class="sla-progress-label">Overall SLA Compliance</span>
+              <span class="sla-progress-stat">
+                {{ sla.completedSteps }} / {{ sla.totalSteps }} steps completed
+              </span>
+            </div>
+            <nz-progress
+              [nzPercent]="(sla.completedSteps / sla.totalSteps) * 100"
+              [nzStrokeColor]="sla.isOverdue ? '#ff4d4f' : '#52c41a'"
+              [nzShowInfo]="false"
+              nzSize="small"
+            ></nz-progress>
+          </div>
+
+          <!-- Horizontal Step Pipeline -->
+          <div class="sla-pipeline">
+            @for (step of sla.steps; track step.stepNumber) {
+              <div class="sla-pipeline-step" [class.sla-pipeline-step--last]="$last">
+                <!-- Step Node -->
+                <div class="sla-pipeline-node">
+                  <div
+                    class="sla-node-circle"
+                    [style.border-color]="getSLAStepColor(step.status)"
+                    [style.background]="
+                      step.status === 'COMPLETED_ON_TIME' || step.status === 'COMPLETED_LATE'
+                        ? getSLAStepColor(step.status)
+                        : 'white'
+                    "
+                  >
+                    <span class="sla-node-icon">{{ getSLAStepIcon(step.status) }}</span>
+                  </div>
+                  <!-- Connector Line -->
+                  @if (!$last) {
+                    <div
+                      class="sla-pipeline-connector"
+                      [style.background]="
+                        step.status === 'COMPLETED_ON_TIME' || step.status === 'COMPLETED_LATE'
+                          ? getSLAStepColor(step.status)
+                          : '#e8e8e8'
+                      "
+                    ></div>
+                  }
+                </div>
+                <!-- Step Info -->
+                <div class="sla-pipeline-info">
+                  <div class="sla-pipeline-name">{{ step.name }}</div>
+                  <div
+                    class="sla-pipeline-time"
+                    [class.sla-overdue-pulse]="step.status === 'IN_PROGRESS_OVERDUE'"
+                    [style.color]="getSLAStepColor(step.status)"
+                  >
+                    @if (step.status === 'IN_PROGRESS' || step.status === 'IN_PROGRESS_OVERDUE') {
+                      <span class="sla-live-indicator">●</span>
+                    }
+                    {{ formatDuration(step.actualMinutes) }}
+                    <span class="sla-pipeline-expected">/ {{ step.expectedMinutes }}m</span>
+                  </div>
+                  @if (step.startedAt) {
+                    <div class="sla-pipeline-timestamp">
+                      {{ formatDate(step.startedAt) }}
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+
+          <!-- Summary Row -->
+          <div class="sla-summary-bar">
+            <nz-tag [nzColor]="sla.isOverdue ? 'red' : 'green'">
+              {{ sla.isOverdue ? 'SLA Breached' : 'Within SLA' }}
+            </nz-tag>
+            <span class="sla-summary-total">
+              Total: <strong>{{ formatDuration(sla.totalActualMinutes) }}</strong> /
+              {{ sla.totalExpectedMinutes }}m target
+            </span>
+          </div>
+        </nz-card>
+      }
+
+      <!-- Assignment Card -->
+      <!-- Shows assigned staff, and if department head can assign, shows the Assign button -->
+      <nz-card [nzTitle]="assignmentCardTitle" [nzExtra]="assignmentCardExtra">
+        @if (t.assignments && t.assignments.length > 0) {
+          <nz-descriptions [nzColumn]="1" nzBordered>
+            @for (assignment of t.assignments; track assignment.user.id) {
+              <nz-descriptions-item [nzTitle]="assignment.user.name">
+                {{ assignment.user.role }} - Assigned {{ formatDate(assignment.assignedAt) }}
+              </nz-descriptions-item>
+            }
+          </nz-descriptions>
+        } @else {
+          <nz-empty nzNotFoundContent="Not yet assigned"></nz-empty>
+        }
+      </nz-card>
+
+      <!-- Assignment Card Title -->
+      <ng-template #assignmentCardTitle>
+        <span>Assigned Staff</span>
+      </ng-template>
+
+      <!-- Assignment Card Extra -->
+      <ng-template #assignmentCardExtra> </ng-template>
+
+      <!-- Schedule & Head Actions Card -->
+      @if (
+        t.dateToVisit || t.status === 'PENDING' || canHeadAcknowledge() || canUpdateResolution()
+      ) {
+        <nz-card nzTitle="Schedule & Actions" class="schedule-card">
+          <!-- Head Acknowledge Alert (for Department Heads on ASSIGNED tickets) -->
+          @if (canHeadAcknowledge()) {
+            <nz-alert
+              nzType="warning"
+              nzMessage="Ticket Pending Acknowledgment"
+              [nzDescription]="headAckDescTpl"
+              [nzShowIcon]="true"
+              style="margin-bottom: 16px"
+            ></nz-alert>
+            <ng-template #headAckDescTpl>
+              <div>
+                <p>This ticket needs your acknowledgment. Enter the developer/technician name.</p>
+                <button
+                  nz-button
+                  nzType="primary"
+                  (click)="openHeadAcknowledgeModal()"
+                  style="margin-top: 8px"
+                >
+                  <i nz-icon nzType="check-circle"></i>
+                  Acknowledge & Assign Developer
+                </button>
+              </div>
+            </ng-template>
+          }
+
+          <!-- Update Resolution Action (for Department Heads) -->
+          @if (canUpdateResolution()) {
+            <nz-alert
+              nzType="info"
+              [nzMessage]="t.resolution ? 'Update Resolution' : 'Add Resolution'"
+              [nzDescription]="resolutionDescTpl"
+              [nzShowIcon]="true"
+              style="margin-bottom: 16px"
+            ></nz-alert>
+            <ng-template #resolutionDescTpl>
+              <div>
+                <p>
+                  {{
+                    t.resolution
+                      ? 'You can update the resolution for this ticket.'
+                      : 'Add a resolution once the work is complete.'
+                  }}
+                </p>
+                <button
+                  nz-button
+                  nzType="primary"
+                  (click)="openResolutionModal()"
+                  style="margin-top: 8px"
+                >
+                  <i nz-icon nzType="file-text"></i>
+                  {{ t.resolution ? 'Update Resolution' : 'Add Resolution' }}
+                </button>
+              </div>
+            </ng-template>
+          }
+
+          <!-- Schedule Information Display -->
+          @if (t.dateToVisit || t.targetCompletionDate) {
+            <nz-descriptions [nzColumn]="2" nzBordered style="margin-bottom: 16px">
+              <nz-descriptions-item nzTitle="Date to Visit">
+                @if (t.dateToVisit) {
+                  <span class="scheduled-date">
+                    <i nz-icon nzType="calendar"></i>
+                    {{ formatDateShort(t.dateToVisit) }}
+                  </span>
+                } @else {
+                  <span class="pending">Not scheduled</span>
+                }
+              </nz-descriptions-item>
+              <nz-descriptions-item nzTitle="Target Completion">
+                @if (t.targetCompletionDate) {
+                  <span class="scheduled-date">
+                    <i nz-icon nzType="clock-circle"></i>
+                    {{ formatDateShort(t.targetCompletionDate) }}
+                  </span>
+                } @else {
+                  <span class="pending">Not set</span>
+                }
+              </nz-descriptions-item>
+              <nz-descriptions-item nzTitle="Assigned Developer">
+                @if (t.assignedDeveloperName) {
+                  <span class="approved">{{ t.assignedDeveloperName }}</span>
+                } @else {
+                  <span class="pending">-</span>
+                }
+              </nz-descriptions-item>
+              <nz-descriptions-item nzTitle="Date Finished">
+                @if (t.dateFinished) {
+                  <span class="approved">{{ formatDate(t.dateFinished) }}</span>
+                } @else {
+                  <span class="pending">-</span>
+                }
+              </nz-descriptions-item>
+            </nz-descriptions>
+          }
+
+          <!-- Resolution Display (staff only for now) -->
+          @if (!isRegularUser() && t.resolution) {
+            <nz-divider nzText="Resolution"></nz-divider>
+            <div class="monitor-report">
+              <div class="report-section">
+                <h5><i nz-icon nzType="file-text"></i> Resolution</h5>
+                <p style="white-space: pre-wrap">{{ t.resolution }}</p>
+              </div>
+              @if (t.dateFinished) {
+                <p class="monitor-timestamp">
+                  <small>Finished on {{ formatDate(t.dateFinished) }}</small>
+                </p>
+              }
+            </div>
+          }
+        </nz-card>
+      }
+
+      <!-- Work Actions Card (for assigned staff) -->
+      <!-- Staff can update status, target completion date, and add comments here -->
+      @if (canUpdateStatus()) {
+        <nz-card nzTitle="Work Actions" class="work-actions-card">
+          <div class="work-actions">
+            <!-- Helpful hint about what the staff can do based on current status -->
+            <p class="action-hint">
+              @switch (ticket()?.status) {
+                @case ('ASSIGNED') {
+                  This ticket is assigned to you. Click "Start Work" to begin.
+                }
+                @case ('IN_PROGRESS') {
+                  You're working on this ticket. Update status when done or if blocked.
+                }
+                @case ('ON_HOLD') {
+                  This ticket is on hold. Resume work when ready.
+                }
+              }
+            </p>
+
+            <div class="action-buttons">
+              @switch (ticket()?.status) {
+                @case ('ASSIGNED') {
+                  <button
+                    nz-button
+                    nzType="primary"
+                    nzSize="large"
+                    [nzLoading]="updatingStatus()"
+                    (click)="quickStatusUpdate('IN_PROGRESS', 'Started working on this ticket')"
+                  >
+                    <i nz-icon nzType="play-circle" nzTheme="outline"></i>
+                    Start Work
+                  </button>
+                  <!-- Update Status button - lets developer set dates and add comments -->
+                  <button nz-button nzType="default" nzSize="large" (click)="openStatusModal()">
+                    <i nz-icon nzType="edit" nzTheme="outline"></i>
+                    Update Status & Details
+                  </button>
+                }
+                @case ('IN_PROGRESS') {
+                  <button
+                    nz-button
+                    nzType="primary"
+                    nzSize="large"
+                    [nzLoading]="updatingStatus()"
+                    nz-popconfirm
+                    nzPopconfirmTitle="Mark this ticket as resolved?"
+                    (nzOnConfirm)="quickStatusUpdate('RESOLVED', 'Work completed')"
+                  >
+                    <i nz-icon nzType="check-circle" nzTheme="outline"></i>
+                    Mark Resolved
+                  </button>
+                  <!-- Update Status button - lets developer update dates and add progress notes -->
+                  <button nz-button nzType="default" nzSize="large" (click)="openStatusModal()">
+                    <i nz-icon nzType="edit" nzTheme="outline"></i>
+                    Update Status & Details
+                  </button>
+                  <button
+                    nz-button
+                    nzType="default"
+                    nzSize="large"
+                    [nzLoading]="updatingStatus()"
+                    (click)="openStatusModal()"
+                  >
+                    <i nz-icon nzType="pause-circle" nzTheme="outline"></i>
+                    Put On Hold
+                  </button>
+                }
+                @case ('ON_HOLD') {
+                  <button
+                    nz-button
+                    nzType="primary"
+                    nzSize="large"
+                    [nzLoading]="updatingStatus()"
+                    (click)="quickStatusUpdate('IN_PROGRESS', 'Resumed work on this ticket')"
+                  >
+                    <i nz-icon nzType="play-circle" nzTheme="outline"></i>
+                    Resume Work
+                  </button>
+                  <!-- Update Status button - lets developer update dates and add progress notes -->
+                  <button nz-button nzType="default" nzSize="large" (click)="openStatusModal()">
+                    <i nz-icon nzType="edit" nzTheme="outline"></i>
+                    Update Status & Details
+                  </button>
+                  <button
+                    nz-button
+                    nzType="default"
+                    nzSize="large"
+                    [nzLoading]="updatingStatus()"
+                    nz-popconfirm
+                    nzPopconfirmTitle="Mark this ticket as resolved?"
+                    (nzOnConfirm)="quickStatusUpdate('RESOLVED', 'Work completed')"
+                  >
+                    <i nz-icon nzType="check-circle" nzTheme="outline"></i>
+                    Mark Resolved
+                  </button>
+                }
+              }
+            </div>
+          </div>
+        </nz-card>
+      }
+
+      <!-- Attachments Section -->
+      <nz-card nzTitle="Attachments & Supporting Documents">
+        <!-- Upload Area -->
+        @if (canUploadAttachments()) {
+          <div class="upload-section">
+            <input
+              #fileInput
+              type="file"
+              multiple
+              style="display: none"
+              accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z"
+              (change)="onFilesSelected($event)"
+            />
+            <div class="upload-area" (click)="triggerFileInput()">
+              <i nz-icon nzType="upload" nzTheme="outline" class="upload-icon"></i>
+              <p class="upload-text">Click or drag files here to upload</p>
+              <p class="upload-hint">
+                Supports images, PDF, Word, Excel, PowerPoint, text files, and archives. Max 50MB
+                per file, up to 5 files at once.
+              </p>
+            </div>
+            @if (uploadingFiles()) {
+              <div style="margin-top: 12px">
+                <nz-progress
+                  [nzPercent]="uploadProgress()"
+                  [nzStatus]="uploadProgress() === 100 ? 'success' : 'active'"
+                  nzStrokeLinecap="round"
+                ></nz-progress>
+                <p style="text-align: center; color: #8c8c8c; margin-top: 4px; font-size: 12px">
+                  @if (uploadProgress() < 100) {
+                    Uploading... {{ uploadProgress() }}%
+                  } @else {
+                    Upload complete! Processing...
+                  }
+                </p>
+              </div>
+            }
+          </div>
+          <nz-divider></nz-divider>
+        }
+
+        <!-- Attachment List -->
+        @if (t.attachments && t.attachments.length > 0) {
+          <div class="attachments-list">
+            @for (attachment of t.attachments; track attachment.id) {
+              <div class="attachment-item" [class.deleted]="attachment.isDeleted">
+                <!-- File preview / icon -->
+                <div class="attachment-preview">
+                  @if (attachment.isDeleted) {
+                    <div class="attachment-icon deleted-icon">
+                      <i nz-icon nzType="delete" nzTheme="outline"></i>
+                    </div>
+                  } @else if (isImageAttachment(attachment.mimeType)) {
+                    <img
+                      [src]="attachment.url"
+                      [alt]="attachment.originalName"
+                      class="attachment-thumbnail"
+                      loading="lazy"
+                    />
+                  } @else {
+                    <div class="attachment-icon">
+                      <i nz-icon [nzType]="getFileIcon(attachment.mimeType)" nzTheme="outline"></i>
+                    </div>
+                  }
+                </div>
+
+                <!-- File info -->
+                <div class="attachment-info">
+                  @if (attachment.isDeleted) {
+                    <span class="attachment-name deleted-name">{{ attachment.originalName }}</span>
+                    <nz-tag nzColor="red" style="margin-left: 6px; vertical-align: middle"
+                      >Deleted</nz-tag
+                    >
+                  } @else {
+                    <a
+                      [href]="attachment.url"
+                      target="_blank"
+                      class="attachment-name"
+                      [nz-tooltip]="attachment.originalName"
+                    >
+                      {{ attachment.originalName }}
+                    </a>
+                  }
+                  <div class="attachment-meta">
+                    {{ formatFileSize(attachment.size) }} &middot; Uploaded
+                    {{ formatDate(attachment.createdAt) }}
+                    @if (attachment.uploadedBy) {
+                      by <strong>{{ attachment.uploadedBy.name }}</strong>
+                    }
+                  </div>
+                  @if (attachment.isDeleted && attachment.deletedBy) {
+                    <div class="attachment-meta deleted-meta">
+                      <i nz-icon nzType="delete" nzTheme="outline" style="margin-right: 4px"></i>
+                      Deleted {{ formatDate(attachment.deletedAt!) }} by
+                      <strong>{{ attachment.deletedBy.name }}</strong>
+                    </div>
+                  }
+                </div>
+
+                <!-- Actions -->
+                <div class="attachment-actions">
+                  @if (!attachment.isDeleted) {
+                    <a
+                      nz-button
+                      nzType="link"
+                      nzSize="small"
+                      [href]="attachment.url"
+                      target="_blank"
+                      download
+                      nz-tooltip="Download"
+                    >
+                      <i nz-icon nzType="download" nzTheme="outline"></i>
+                    </a>
+                    @if (canDeleteAttachment(attachment)) {
+                      <button
+                        nz-button
+                        nzType="link"
+                        nzDanger
+                        nzSize="small"
+                        nz-popconfirm
+                        nzPopconfirmTitle="Delete this attachment?"
+                        (nzOnConfirm)="deleteAttachment(attachment)"
+                        [nzLoading]="deletingAttachmentId() === attachment.id"
+                        nz-tooltip="Delete"
+                      >
+                        <i nz-icon nzType="delete" nzTheme="outline"></i>
+                      </button>
+                    }
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        } @else {
+          <nz-empty nzNotFoundContent="No attachments yet"></nz-empty>
+        }
+      </nz-card>
+
+      <!-- Client Satisfaction Survey Card (ARTA CSM) -->
+      @if (canShowCsmSurvey()) {
+        <nz-card class="satisfaction-card csm-survey-card">
+          @if (canSubmitCsmSurvey()) {
+            <nz-alert
+              nzType="success"
+              nzMessage="Your ticket has been resolved!"
+              [nzDescription]="csmPromptTpl"
+              [nzShowIcon]="true"
+            ></nz-alert>
+            <ng-template #csmPromptTpl>
+              <div>
+                <p>
+                  Please complete the official Client Satisfaction Measurement (CSM) survey. Your
+                  feedback helps us improve our services.
+                </p>
+                <button
+                  nz-button
+                  nzType="primary"
+                  (click)="showCsmSurvey.set(true)"
+                  style="margin-top: 8px"
+                >
+                  <i nz-icon nzType="form"></i>
+                  Complete CSM Survey
+                </button>
+              </div>
+            </ng-template>
+          }
+
+          @if (showCsmSurvey() && canSubmitCsmSurvey()) {
+            <nz-divider nzText="ARTA Client Satisfaction Measurement Form"></nz-divider>
+            <app-survey-form
+              [ticketId]="ticket()!.id"
+              (submitted)="onCsmSurveySubmitted($event)"
+            ></app-survey-form>
+          }
+
+          @if (csmSurveySubmitted()) {
+            <nz-alert
+              nzType="info"
+              nzMessage="Survey Submitted"
+              nzDescription="Thank you! Your Client Satisfaction Measurement survey has been recorded. This helps us meet ARTA requirements and improve our services."
+              [nzShowIcon]="true"
+              style="margin-top: 12px"
+            ></nz-alert>
+          }
+        </nz-card>
+      }
+
+      <!-- Status History Timeline -->
+      <nz-card nzTitle="Status History">
+        @if (t.statusHistory && t.statusHistory.length > 0) {
+          <div class="status-history-container">
+            <nz-timeline>
+              @for (history of t.statusHistory; track history.id) {
+                <nz-timeline-item>
+                  @if (isRegularUser()) {
+                    <p class="status-history-title status-history-title-user">
+                      @if (history.fromStatus) {
+                        <nz-tag [nzColor]="getStatusColor(history.fromStatus)">{{
+                          history.fromStatus
+                        }}</nz-tag>
+                        <span class="status-history-arrow">to</span>
+                      }
+                      <nz-tag [nzColor]="getStatusColor(history.toStatus)">{{
+                        history.toStatus
+                      }}</nz-tag>
+                    </p>
+                  } @else {
+                    <p class="status-history-title">
+                      <strong>{{ history.user.name }}</strong> changed status
+                      @if (history.fromStatus) {
+                        from
+                        <nz-tag [nzColor]="getStatusColor(history.fromStatus)">{{
+                          history.fromStatus
+                        }}</nz-tag>
+                      }
+                      to
+                      <nz-tag [nzColor]="getStatusColor(history.toStatus)">{{
+                        history.toStatus
+                      }}</nz-tag>
+                    </p>
+                  }
+                  @if (
+                    isRegularUser() ? getUserStatusHistoryComment(history) : history.comment;
+                    as statusComment
+                  ) {
+                    <p class="comment">{{ statusComment }}</p>
+                  }
+                  <p class="timestamp">{{ formatDate(history.createdAt) }}</p>
+                </nz-timeline-item>
+              }
+            </nz-timeline>
+          </div>
+        } @else {
+          <nz-empty nzNotFoundContent="No status changes yet"></nz-empty>
+        }
+      </nz-card>
+
+      <!-- Notes Section -->
+      <nz-card nzTitle="Notes & Comments">
+        <!-- Add Note Form -->
+        <div class="add-note-form">
+          <h4>Add a Note</h4>
+          <textarea
+            nz-input
+            [ngModel]="noteContent()"
+            (ngModelChange)="noteContent.set($event)"
+            placeholder="Enter your comment or note..."
+            [nzAutosize]="{ minRows: 3, maxRows: 6 }"
+            [disabled]="submittingNote()"
+          ></textarea>
+
+          <div class="form-actions">
+            @if (canAddInternalNotes()) {
+              <label
+                nz-checkbox
+                [ngModel]="isInternalNote()"
+                (ngModelChange)="isInternalNote.set($event)"
+                [disabled]="submittingNote()"
+              >
+                Internal Note (only visible to staff)
+              </label>
+            }
+
+            <button
+              nz-button
+              nzType="primary"
+              (click)="submitNote()"
+              [nzLoading]="submittingNote()"
+              [disabled]="!noteContent().trim()"
+            >
+              Add Note
+            </button>
+          </div>
+        </div>
+
+        <nz-divider></nz-divider>
+
+        <!-- Notes List -->
+        @if (visibleNotes().length > 0) {
+          <div class="notes-list">
+            @for (note of visibleNotes(); track note.id) {
+              <div class="note-item" [class.internal]="note.isInternal">
+                <div class="note-header">
+                  <strong>{{ note.user.name }}</strong>
+                  <span class="note-role">({{ note.user.role }})</span>
+                  @if (note.isInternal) {
+                    <nz-tag nzColor="orange">Internal</nz-tag>
+                  }
+                  <span class="note-time">{{ formatDate(note.createdAt) }}</span>
+
+                  @if (canManageNotes()) {
+                    <span class="note-actions">
+                      @if (!note.isInternal) {
+                        <button
+                          nz-button
+                          nzType="default"
+                          nzSize="small"
+                          nz-tooltip
+                          nzTooltipTitle="Make internal (hidden from requester)"
+                          [nzLoading]="togglingNoteId() === note.id"
+                          [disabled]="deletingNoteId() === note.id"
+                          (click)="toggleNoteInternal(note)"
+                        >
+                          <span nz-icon nzType="eye-invisible" nzTheme="outline"></span>
+                          Make Internal
+                        </button>
+                      } @else {
+                        <button
+                          nz-button
+                          nzType="default"
+                          nzSize="small"
+                          nz-tooltip
+                          nzTooltipTitle="Make public (visible to requester)"
+                          [nzLoading]="togglingNoteId() === note.id"
+                          [disabled]="deletingNoteId() === note.id"
+                          (click)="toggleNoteInternal(note)"
+                        >
+                          <span nz-icon nzType="eye" nzTheme="outline"></span>
+                          Make Public
+                        </button>
+                      }
+                      <button
+                        nz-button
+                        nzType="default"
+                        nzDanger
+                        nzSize="small"
+                        nz-popconfirm
+                        nzPopconfirmTitle="Delete this note?"
+                        nzOkText="Delete"
+                        nzCancelText="Cancel"
+                        nzPopconfirmPlacement="top"
+                        [nzLoading]="deletingNoteId() === note.id"
+                        [disabled]="togglingNoteId() === note.id"
+                        (nzOnConfirm)="deleteNote(note.id)"
+                      >
+                        <span nz-icon nzType="delete" nzTheme="outline"></span>
+                        Delete
+                      </button>
+                    </span>
+                  }
+                </div>
+                <div class="note-content">{{ note.content }}</div>
+              </div>
+            }
+          </div>
+        } @else {
+          <nz-empty nzNotFoundContent="No notes yet"></nz-empty>
+        }
+      </nz-card>
+    </div>
+  } @else {
+    <nz-empty nzNotFoundContent="Ticket not found"></nz-empty>
+  }
+</nz-spin>
+
+<ng-template #headerTemplate>
+  @if (ticket(); as t) {
+    <span>{{ t.title }}</span>
+  }
+</ng-template>
+
+<ng-template #headerActions>
+  <button nz-button routerLink="/tickets">Back to List</button>
+</ng-template>
+
+<!-- Status Update Modal (for Staff - includes optional target completion date) -->
+<nz-modal
+  [nzVisible]="showStatusModal()"
+  (nzVisibleChange)="showStatusModal.set($event)"
+  nzTitle="Update Ticket Status"
+  [nzOkText]="'Update'"
+  [nzCancelText]="'Cancel'"
+  [nzOkLoading]="updatingStatus()"
+  (nzOnOk)="confirmStatusUpdate()"
+  (nzOnCancel)="closeStatusModal()"
+>
+  <ng-container *nzModalContent>
+    <div class="status-modal-form">
+      <!-- Status selection -->
+      <div class="form-group">
+        <label>New Status:</label>
+        <nz-select
+          [ngModel]="selectedStatus()"
+          (ngModelChange)="selectedStatus.set($event)"
+          nzPlaceHolder="Select new status"
+          style="width: 100%"
+        >
+          @for (option of statusOptions; track option.value) {
+            <nz-option [nzValue]="option.value" [nzLabel]="option.label"></nz-option>
+          }
+        </nz-select>
+      </div>
+
+      <!-- Target Completion Date (optional - developer can update this) -->
+      <div class="form-group" style="margin-top: 12px">
+        <label>Target Completion Date (optional):</label>
+        <nz-date-picker
+          style="width: 100%"
+          [ngModel]="devTargetCompletionDate()"
+          (ngModelChange)="devTargetCompletionDate.set($event)"
+          nzPlaceHolder="Update target completion date"
+          [nzInputReadOnly]="true"
+        ></nz-date-picker>
+        <p class="info-text" style="margin-top: 4px; color: #999; font-size: 12px">
+          <i nz-icon nzType="info-circle" nzTheme="outline"></i>
+          You can update the expected completion date here.
+        </p>
+      </div>
+
+      <!-- Comment / Reason (this goes into status history and is visible to heads) -->
+      <div class="form-group" style="margin-top: 12px">
+        <label>Comment / Progress Notes:</label>
+        <textarea
+          nz-input
+          [ngModel]="statusComment()"
+          (ngModelChange)="statusComment.set($event)"
+          rows="4"
+          placeholder="Add a comment about the work progress. This will be visible to department heads and in the status history..."
+        ></textarea>
+        <p class="info-text" style="margin-top: 4px; color: #999; font-size: 12px">
+          <i nz-icon nzType="info-circle" nzTheme="outline"></i>
+          Your comment will appear in the status history and notify the department head.
+        </p>
+      </div>
+    </div>
+  </ng-container>
+</nz-modal>
+
+<!-- Reopen Ticket Modal -->
+<nz-modal
+  [nzVisible]="showReopenModal()"
+  (nzVisibleChange)="showReopenModal.set($event)"
+  nzTitle="Reopen & Resubmit Ticket"
+  [nzOkText]="'Resubmit for Review'"
+  [nzCancelText]="'Cancel'"
+  [nzOkLoading]="reopening()"
+  [nzWidth]="600"
+  (nzOnOk)="confirmReopenTicket()"
+  (nzOnCancel)="closeReopenModal()"
+>
+  <ng-container *nzModalContent>
+    <nz-alert
+      nzType="info"
+      nzMessage="Reopen Your Ticket"
+      nzDescription="You can update the description below to address the rejection reason, then resubmit for review."
+      [nzShowIcon]="true"
+      style="margin-bottom: 16px"
+    ></nz-alert>
+
+    <div class="reopen-modal-form">
+      <div class="form-group">
+        <label><strong>Description</strong> (you can edit to address feedback):</label>
+        <textarea
+          nz-input
+          [ngModel]="reopenDescription()"
+          (ngModelChange)="reopenDescription.set($event)"
+          rows="6"
+          placeholder="Update your ticket description..."
+        ></textarea>
+      </div>
+
+      <div class="form-group">
+        <label><strong>Comment</strong> (optional - explain what you changed):</label>
+        <textarea
+          nz-input
+          [ngModel]="reopenComment()"
+          (ngModelChange)="reopenComment.set($event)"
+          rows="3"
+          placeholder="e.g., Updated description to clarify the issue, added more details about the problem..."
+        ></textarea>
+      </div>
+    </div>
+  </ng-container>
+</nz-modal>
+
+<!-- Secretary Review Modal -->
+<nz-modal
+  [nzVisible]="showSecretaryReviewModal()"
+  (nzVisibleChange)="showSecretaryReviewModal.set($event)"
+  nzTitle="Secretary Review"
+  [nzFooter]="secretaryReviewFooter"
+  [nzClosable]="true"
+  [nzWidth]="550"
+  (nzOnCancel)="closeSecretaryReviewModal()"
+>
+  <ng-container *nzModalContent>
+    <p>Please review this ticket. You can:</p>
+    <ul>
+      <li><strong>Endorsed:</strong> Forward to the Office Head for assignment</li>
+      <li><strong>Return:</strong> Send back to requester with notes for revision</li>
+    </ul>
+
+    <div class="form-group" style="margin-top: 16px">
+      <label
+        >Notes/Comments:
+        <span class="required" *ngIf="secretaryReviewAction() === 'reject'">*</span></label
+      >
+      <textarea
+        nz-input
+        [ngModel]="secretaryReviewComment()"
+        (ngModelChange)="secretaryReviewComment.set($event)"
+        rows="4"
+        [placeholder]="
+          secretaryReviewAction() === 'reject'
+            ? 'Enter the reason for returning the ticket (required)...'
+            : 'Add any comments about this ticket (optional)...'
+        "
+      ></textarea>
+    </div>
+  </ng-container>
+
+  <ng-template #secretaryReviewFooter>
+    <button nz-button nzType="default" (click)="closeSecretaryReviewModal()">Cancel</button>
+    <button
+      nz-button
+      nzType="default"
+      nzDanger
+      [nzLoading]="processingSecretaryReview()"
+      (click)="secretaryReviewAction.set('reject'); confirmSecretaryReview()"
+    >
+      <i nz-icon nzType="rollback"></i>
+      Return with Notes
+    </button>
+    <button
+      nz-button
+      nzType="primary"
+      [nzLoading]="processingSecretaryReview()"
+      (click)="secretaryReviewAction.set('approve'); confirmSecretaryReview()"
+    >
+      <i nz-icon nzType="check"></i>
+      Approve & Forward
+    </button>
+  </ng-template>
+</nz-modal>
+
+<!-- Director Approval Modal -->
+<nz-modal
+  [nzVisible]="showDirectorApprovalModal()"
+  (nzVisibleChange)="showDirectorApprovalModal.set($event)"
+  nzTitle="Director Approval"
+  [nzFooter]="directorApprovalFooter"
+  [nzClosable]="true"
+  [nzWidth]="550"
+  (nzOnCancel)="closeDirectorApprovalModal()"
+>
+  <ng-container *nzModalContent>
+    <p>This ticket has been reviewed by the secretary. You can:</p>
+    <ul>
+      <li><strong>Approve:</strong> Approve and auto-assign to the appropriate Office Head</li>
+      <li><strong>Disapprove:</strong> Return to requester with notes</li>
+    </ul>
+
+    <div class="form-group" style="margin-top: 16px">
+      <label
+        >Notes/Comments:
+        <span class="required" *ngIf="directorApprovalAction() === 'disapprove'">*</span></label
+      >
+      <textarea
+        nz-input
+        [ngModel]="directorApprovalComment()"
+        (ngModelChange)="directorApprovalComment.set($event)"
+        rows="4"
+        [placeholder]="
+          directorApprovalAction() === 'disapprove'
+            ? 'Enter the reason for disapproval (required)...'
+            : 'Add any comments about this approval (optional)...'
+        "
+      ></textarea>
+    </div>
+  </ng-container>
+
+  <ng-template #directorApprovalFooter>
+    <button nz-button nzType="default" (click)="closeDirectorApprovalModal()">Cancel</button>
+    <button
+      nz-button
+      nzType="default"
+      nzDanger
+      [nzLoading]="processingDirectorApproval()"
+      (click)="directorApprovalAction.set('disapprove'); confirmDirectorApproval()"
+    >
+      <i nz-icon nzType="close-circle"></i>
+      Disapprove
+    </button>
+    <button
+      nz-button
+      nzType="primary"
+      [nzLoading]="processingDirectorApproval()"
+      (click)="directorApprovalAction.set('approve'); confirmDirectorApproval()"
+    >
+      <i nz-icon nzType="check-circle"></i>
+      Approve & Assign
+    </button>
+  </ng-template>
+</nz-modal>
+
+<!-- Head Acknowledge & Assign Developer Modal (for Department Heads) -->
+<nz-modal
+  [nzVisible]="showHeadAcknowledgeModal()"
+  (nzVisibleChange)="showHeadAcknowledgeModal.set($event)"
+  nzTitle="Acknowledge & Assign Developer"
+  [nzOkText]="'Acknowledge & Assign'"
+  [nzCancelText]="'Cancel'"
+  [nzOkLoading]="processingHeadAcknowledge()"
+  [nzOkDisabled]="!headAckDeveloperName().trim()"
+  [nzWidth]="550"
+  (nzOnOk)="confirmHeadAcknowledge()"
+  (nzOnCancel)="closeHeadAcknowledgeModal()"
+>
+  <ng-container *nzModalContent>
+    <nz-alert
+      nzType="info"
+      nzMessage="Acknowledge & assign this ticket"
+      nzDescription="Enter the developer/technician name and optionally set dates."
+      [nzShowIcon]="true"
+      style="margin-bottom: 16px"
+    ></nz-alert>
+
+    <!-- Staff member selection (commented out — using text input for now)
+    <div class="form-group" style="margin-bottom: 16px">
+      <label>Assign to Staff Member (optional):</label>
+      <nz-select
+        [ngModel]="selectedUserId()"
+        (ngModelChange)="selectedUserId.set($event)"
+        nzPlaceHolder="Select staff member"
+        nzShowSearch
+        nzAllowClear
+        style="width: 100%"
+      >
+        @for (staff of staffList(); track staff.id) {
+          <nz-option [nzValue]="staff.id" [nzLabel]="staff.name || staff.email"></nz-option>
+        }
+      </nz-select>
+    </div>
+    -->
+
+    <div class="form-group" style="margin-bottom: 16px">
+      <label><span class="required">*</span> Staff Name:</label>
+      <input
+        nz-input
+        [ngModel]="headAckDeveloperName()"
+        (ngModelChange)="headAckDeveloperName.set($event)"
+        placeholder="Enter the staff name"
+      />
+    </div>
+
+    <div class="form-group" style="margin-bottom: 16px">
+      <label>Date to Visit (optional):</label>
+      <nz-date-picker
+        style="width: 100%"
+        [ngModel]="headAckDateToVisit()"
+        (ngModelChange)="headAckDateToVisit.set($event)"
+        nzPlaceHolder="Select date to visit"
+        [nzDisabledDate]="disablePastDates"
+      ></nz-date-picker>
+    </div>
+
+    <div class="form-group" style="margin-bottom: 16px">
+      <label>Target Completion Date (optional):</label>
+      <nz-date-picker
+        style="width: 100%"
+        [ngModel]="headAckTargetCompletion()"
+        (ngModelChange)="headAckTargetCompletion.set($event)"
+        nzPlaceHolder="Select target completion date"
+        [nzDisabledDate]="disablePastDates"
+      ></nz-date-picker>
+    </div>
+
+    <div class="form-group">
+      <label>Comment (optional):</label>
+      <textarea
+        nz-input
+        [ngModel]="headAckComment()"
+        (ngModelChange)="headAckComment.set($event)"
+        rows="3"
+        placeholder="Any instructions or notes for the developer..."
+      ></textarea>
+    </div>
+  </ng-container>
+</nz-modal>
+
+<!-- Resolution Update Modal (for Department Heads) -->
+<nz-modal
+  [nzVisible]="showResolutionModal()"
+  (nzVisibleChange)="showResolutionModal.set($event)"
+  nzTitle="Update Resolution"
+  [nzOkText]="'Save Resolution'"
+  [nzCancelText]="'Cancel'"
+  [nzOkLoading]="processingResolution()"
+  [nzOkDisabled]="!resolutionText().trim()"
+  [nzWidth]="640"
+  (nzOnOk)="confirmResolution()"
+  (nzOnCancel)="closeResolutionModal()"
+>
+  <ng-container *nzModalContent>
+    <nz-alert
+      nzType="info"
+      nzMessage="Provide Step-by-Step Resolution"
+      nzDescription="Please document the precise steps taken to resolve this issue. This will be saved to our knowledge base so the AI can help users with similar problems in the future."
+      [nzShowIcon]="true"
+      style="margin-bottom: 16px"
+    ></nz-alert>
+
+    <!-- Developer's Status Comments (read-only reference) -->
+    @if (devStatusComments().length > 0) {
+      <div
+        style="
+          margin-bottom: 16px;
+          background: #f6f8fa;
+          border: 1px solid #e1e4e8;
+          border-radius: 6px;
+          padding: 12px;
+        "
+      >
+        <h5 style="margin: 0 0 8px 0; color: #24292e">
+          <i nz-icon nzType="message" nzTheme="outline"></i>
+          Developer Notes / Comments
+        </h5>
+        @for (entry of devStatusComments(); track entry.id) {
+          <div
+            style="
+              padding: 8px;
+              background: #fff;
+              border-radius: 4px;
+              margin-bottom: 6px;
+              border-left: 3px solid #1890ff;
+            "
+          >
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px">
+              <strong style="font-size: 12px; color: #586069"
+                >{{ entry.user.name }} ({{ entry.fromStatus }} → {{ entry.toStatus }})</strong
+              >
+              <small style="color: #959da5">{{ formatDateShort(entry.createdAt) }}</small>
+            </div>
+            <p style="margin: 0; white-space: pre-wrap; font-size: 13px">{{ entry.comment }}</p>
+          </div>
+        }
+        <p style="margin: 8px 0 0 0; font-size: 11px; color: #959da5">
+          <i nz-icon nzType="bulb" nzTheme="outline"></i>
+          Use the developer's notes above as reference for the resolution.
+        </p>
+      </div>
+    }
+
+    <div class="form-group" style="margin-bottom: 16px">
+      <label><span class="required">*</span> Resolution Steps:</label>
+      <p style="font-size: 12px; color: #8c8c8c; margin: 4px 0 8px">
+        Write clear, numbered steps so anyone can follow them. Example: "1. Open Control Panel → 2.
+        Go to Network Settings → 3. Reset adapter"
+      </p>
+      <textarea
+        nz-input
+        [ngModel]="resolutionText()"
+        (ngModelChange)="resolutionText.set($event)"
+        rows="6"
+        placeholder="1. First, I checked...&#10;2. Then I...&#10;3. The fix was to...&#10;4. Verified by..."
+      ></textarea>
+    </div>
+
+    <!-- Solution Visibility Classification -->
+    <div
+      class="form-group"
+      style="
+        margin-bottom: 16px;
+        padding: 14px;
+        background: #fafafa;
+        border: 1px solid #f0f0f0;
+        border-radius: 8px;
+      "
+    >
+      <label style="font-weight: 600; display: block; margin-bottom: 8px">
+        <i nz-icon nzType="eye" nzTheme="outline" style="margin-right: 6px"></i>
+        Solution Visibility
+      </label>
+      <nz-radio-group
+        [ngModel]="solutionVisibility()"
+        (ngModelChange)="solutionVisibility.set($event)"
+      >
+        <label nz-radio nzValue="INTERNAL">
+          <strong>Internal</strong>
+          <span style="color: #8c8c8c; font-size: 12px; margin-left: 4px"
+            >— For staff &amp; developers only (technical procedures)</span
+          >
+        </label>
+        <br />
+        <label nz-radio nzValue="PUBLIC" style="margin-top: 8px">
+          <strong>Public</strong>
+          <span style="color: #8c8c8c; font-size: 12px; margin-left: 4px"
+            >— Users can follow these steps on their own (self-service)</span
+          >
+        </label>
+      </nz-radio-group>
+      <p style="font-size: 11px; color: #bfbfbf; margin: 8px 0 0">
+        <i nz-icon nzType="info-circle" nzTheme="outline"></i>
+        Public solutions will be suggested by the AI to users with similar issues. Internal
+        solutions are only referenced for staff troubleshooting.
+      </p>
+    </div>
+
+    <div class="form-group" style="margin-bottom: 16px">
+      <label>Date Finished (optional):</label>
+      <nz-date-picker
+        style="width: 100%"
+        [ngModel]="resolutionDateFinished()"
+        (ngModelChange)="resolutionDateFinished.set($event)"
+        nzPlaceHolder="Select the date the work was completed"
+      ></nz-date-picker>
+    </div>
+
+    <div class="form-group">
+      <label>Comment (optional):</label>
+      <textarea
+        nz-input
+        [ngModel]="resolutionComment()"
+        (ngModelChange)="resolutionComment.set($event)"
+        rows="3"
+        placeholder="Any additional notes..."
+      ></textarea>
+    </div>
+  </ng-container>
+</nz-modal>
+
+<!-- ======================================== -->
+<!-- TYPE EDIT MODAL (Admin/Secretary only) -->
+<!-- ======================================== -->
+<nz-modal
+  [nzVisible]="showTypeEditModal()"
+  (nzVisibleChange)="showTypeEditModal.set($event)"
+  nzTitle="Change Ticket Type"
+  [nzOkLoading]="savingType()"
+  nzOkText="Save"
+  (nzOnOk)="confirmTypeEdit()"
+  (nzOnCancel)="closeTypeEditModal()"
+  nzWidth="400px"
+>
+  <ng-container *nzModalContent>
+    <nz-form-item>
+      <nz-form-label nzRequired>Type</nz-form-label>
+      <nz-form-control>
+        <nz-select
+          [ngModel]="editingType()"
+          (ngModelChange)="editingType.set($event)"
+          style="width: 100%"
+        >
+          <nz-option nzValue="MIS" nzLabel="MIS - Management Information System"></nz-option>
+          <nz-option nzValue="ITS" nzLabel="ITS - Information Technology Services"></nz-option>
+        </nz-select>
+      </nz-form-control>
+    </nz-form-item>
+    <p style="color: #888; font-size: 12px; margin: 0">
+      Changing the type will recreate the ticket details for the selected department.
+    </p>
+  </ng-container>
+</nz-modal>
+
+<!-- ======================================== -->
+<!-- PRIORITY EDIT MODAL (Admin/Secretary only) -->
+<!-- ======================================== -->
+<nz-modal
+  [nzVisible]="showPriorityEditModal()"
+  (nzVisibleChange)="showPriorityEditModal.set($event)"
+  nzTitle="Change Ticket Priority"
+  [nzOkLoading]="savingPriority()"
+  nzOkText="Save"
+  (nzOnOk)="confirmPriorityEdit()"
+  (nzOnCancel)="closePriorityEditModal()"
+  nzWidth="400px"
+>
+  <ng-container *nzModalContent>
+    <nz-form-item>
+      <nz-form-label nzRequired>Priority</nz-form-label>
+      <nz-form-control>
+        <nz-select
+          [ngModel]="editingPriority()"
+          (ngModelChange)="editingPriority.set($event)"
+          style="width: 100%"
+        >
+          <nz-option nzValue="LOW" nzLabel="Low"></nz-option>
+          <nz-option nzValue="MEDIUM" nzLabel="Medium"></nz-option>
+          <nz-option nzValue="HIGH" nzLabel="High"></nz-option>
+          <nz-option nzValue="CRITICAL" nzLabel="Critical"></nz-option>
+        </nz-select>
+      </nz-form-control>
+    </nz-form-item>
+  </ng-container>
+</nz-modal>
+
+<!-- Satisfaction Survey Modal -->
+<nz-modal
+  [nzVisible]="showSatisfactionModal()"
+  (nzVisibleChange)="showSatisfactionModal.set($event)"
+  nzTitle="Rate Our Service"
+  [nzFooter]="satisfactionFooter"
+  [nzWidth]="480"
+  (nzOnCancel)="closeSatisfactionModal()"
+>
+  <ng-container *nzModalContent>
+    <div style="text-align: center; padding: 16px 0">
+      <p style="margin-bottom: 16px; font-size: 16px">How satisfied are you with the service?</p>
+      <div class="star-rating" style="margin-bottom: 24px">
+        @for (star of [1, 2, 3, 4, 5]; track star) {
+          <i
+            nz-icon
+            nzType="star"
+            [nzTheme]="star <= satisfactionRating() ? 'fill' : 'outline'"
+            [style.color]="star <= satisfactionRating() ? '#faad14' : '#d9d9d9'"
+            style="font-size: 36px; margin: 0 4px; cursor: pointer; transition: transform 0.2s"
+            (click)="satisfactionRating.set(star)"
+          ></i>
+        }
+      </div>
+      <div style="margin-bottom: 8px">
+        @switch (satisfactionRating()) {
+          @case (1) {
+            <nz-tag nzColor="red">Very Dissatisfied</nz-tag>
+          }
+          @case (2) {
+            <nz-tag nzColor="orange">Dissatisfied</nz-tag>
+          }
+          @case (3) {
+            <nz-tag nzColor="blue">Neutral</nz-tag>
+          }
+          @case (4) {
+            <nz-tag nzColor="green">Satisfied</nz-tag>
+          }
+          @case (5) {
+            <nz-tag nzColor="green">Very Satisfied</nz-tag>
+          }
+        }
+      </div>
+    </div>
+    <div class="form-group" style="margin-top: 8px">
+      <label>Additional Comments (optional):</label>
+      <textarea
+        nz-input
+        [ngModel]="satisfactionComment()"
+        (ngModelChange)="satisfactionComment.set($event)"
+        rows="3"
+        placeholder="Tell us more about your experience..."
+      ></textarea>
+    </div>
+  </ng-container>
+
+  <ng-template #satisfactionFooter>
+    <button nz-button nzType="default" (click)="closeSatisfactionModal()">Cancel</button>
+    <button
+      nz-button
+      nzType="primary"
+      [nzLoading]="submittingSatisfaction()"
+      [disabled]="satisfactionRating() < 1"
+      (click)="submitSatisfactionSurvey()"
+    >
+      <i nz-icon nzType="check-circle"></i>
+      Submit Feedback
+    </button>
+  </ng-template>
+</nz-modal>

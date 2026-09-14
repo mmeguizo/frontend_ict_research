@@ -1,0 +1,87 @@
+.page-subtitle {
+  color: #666;
+  margin-bottom: 16px;
+}
+
+.filter-bar {
+  margin-bottom: 16px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+:host ::ng-deep {
+  .ant-table-cell {
+    vertical-align: middle !important;
+  }
+
+  .ant-table-tbody > tr > td {
+    vertical-align: middle !important;
+  }
+
+  .ant-tag {
+    margin: 0;
+  }
+}
+
+/* Responsive table container to keep table inside the card and enable horizontal scrolling */
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+:host ::ng-deep .table-wrapper .ant-table-wrapper {
+  min-width: 100%;
+}
+
+:host ::ng-deep table {
+  table-layout: auto;
+  width: 100%;
+  min-width: 1000px;
+}
+
+:host ::ng-deep th,
+:host ::ng-deep td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 12px 16px !important;
+}
+
+/* Title column - allow wrapping */
+.title-cell,
+:host ::ng-deep td:nth-child(3) {
+  white-space: normal;
+  word-break: break-word;
+  min-width: 200px;
+  max-width: 300px;
+}
+
+/* Action column - more space for buttons */
+.action-cell {
+  min-width: 180px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+/* Form groups in modals */
+.form-group {
+  margin-bottom: 16px;
+
+  label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+  }
+}
+
+/* Warning text */
+.warning-text {
+  color: #faad14;
+  font-style: italic;
+  margin-top: 8px;
+}

@@ -1,0 +1,232 @@
+<!-- â”€â”€ Request Type Selector â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<div class="request-type-selector">
+  <p class="selector-label">What type of request is this?</p>
+  <nz-radio-group
+    [ngModel]="requestType()"
+    (ngModelChange)="requestType.set($event)"
+    [ngModelOptions]="{ standalone: true }"
+    nzButtonStyle="solid"
+  >
+    <label nz-radio-button nzValue="BORROW">
+      <span nz-icon nzType="inbox" nzTheme="outline"></span>
+      Borrow Equipment
+    </label>
+    <label nz-radio-button nzValue="MAINTENANCE">
+      <span nz-icon nzType="tool" nzTheme="outline"></span>
+      Maintenance &amp; Repair
+    </label>
+    <label nz-radio-button nzValue="BOTH">
+      <span nz-icon nzType="appstore" nzTheme="outline"></span>
+      Both
+    </label>
+  </nz-radio-group>
+</div>
+
+<nz-divider></nz-divider>
+
+<!-- â”€â”€ 1. BORROW Section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+@if (showBorrow()) {
+  <nz-card [nzTitle]="borrowTitleTpl" [nzSize]="'small'" class="section-card borrow-card">
+    <ng-template #borrowTitleTpl>
+      <span class="card-section-title">
+        <span nz-icon nzType="inbox" nzTheme="outline" class="section-icon borrow-icon"></span>
+        Borrow Equipment
+      </span>
+    </ng-template>
+
+    <div [formGroup]="borrowGroup">
+      <nz-form-item>
+        <nz-form-label [nzRequired]="true">Purpose</nz-form-label>
+        <nz-form-control nzExtra="Briefly explain why you need to borrow this equipment">
+          <input
+            nz-input
+            formControlName="purpose"
+            placeholder="e.g. Presentation, Training session"
+          />
+        </nz-form-control>
+      </nz-form-item>
+
+      <div nz-row [nzGutter]="16">
+        <div nz-col [nzXs]="24" [nzSm]="12">
+          <nz-form-item>
+            <nz-form-label>Duration</nz-form-label>
+            <nz-form-control>
+              <input nz-input formControlName="duration" placeholder="e.g. 2 hours, 1 day" />
+            </nz-form-control>
+          </nz-form-item>
+        </div>
+        <div nz-col [nzXs]="24" [nzSm]="12">
+          <nz-form-item>
+            <nz-form-label>Venue / Room</nz-form-label>
+            <nz-form-control>
+              <input nz-input formControlName="venueRoom" placeholder="e.g. Conference Room A" />
+            </nz-form-control>
+          </nz-form-item>
+        </div>
+      </div>
+
+      <nz-form-item>
+        <nz-form-label>Items to Borrow</nz-form-label>
+        <nz-form-control
+          nzExtra="Include quantity, item name, and any remarks â€” one item per line"
+        >
+          <textarea
+            nz-input
+            formControlName="borrowedItems"
+            [nzAutosize]="{ minRows: 3, maxRows: 8 }"
+            placeholder="e.g.&#10;1x Projector&#10;2x HDMI cables&#10;1x Laptop"
+          ></textarea>
+        </nz-form-control>
+      </nz-form-item>
+    </div>
+  </nz-card>
+}
+
+<!-- â”€â”€ 2. MAINTENANCE & REPAIR Section â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+@if (showMaintenance()) {
+  <nz-card [nzTitle]="maintenanceTitleTpl" [nzSize]="'small'" class="section-card maintenance-card">
+    <ng-template #maintenanceTitleTpl>
+      <span class="card-section-title">
+        <span nz-icon nzType="tool" nzTheme="outline" class="section-icon maintenance-icon"></span>
+        Maintenance &amp; Repair
+      </span>
+    </ng-template>
+
+    <div [formGroup]="maintenanceGroup">
+      <div nz-row [nzGutter]="16">
+        <!-- Desktop / Laptop PC -->
+        <div nz-col [nzXs]="24" [nzSm]="8">
+          <div class="category-group" [class.active]="hasDesktopCheck()">
+            <div class="category-header">
+              <span nz-icon nzType="desktop" nzTheme="outline"></span>
+              <span>Desktop / Laptop PC</span>
+            </div>
+            <div [formGroup]="desktopLaptopGroup" class="checkbox-list">
+              <label nz-checkbox formControlName="reformatBackup">Reformat / Back-up</label>
+              <label nz-checkbox formControlName="virusRemoval">Virus Removal</label>
+              <label nz-checkbox formControlName="cleaning">Cleaning</label>
+              <label nz-checkbox formControlName="noPower">No power</label>
+              <label nz-checkbox formControlName="checkup">Check-up</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Internet / Network -->
+        <div nz-col [nzXs]="24" [nzSm]="8">
+          <div class="category-group" [class.active]="hasNetworkCheck()">
+            <div class="category-header">
+              <span nz-icon nzType="wifi" nzTheme="outline"></span>
+              <span>Internet / Network</span>
+            </div>
+            <div [formGroup]="internetNetworkGroup" class="checkbox-list">
+              <label nz-checkbox formControlName="newConnection">New connection</label>
+              <label nz-checkbox formControlName="noInternetConnection"
+                >No internet connection</label
+              >
+              <label nz-checkbox formControlName="wifiRouterProblem">Wifi / Router problem</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Printer -->
+        <div nz-col [nzXs]="24" [nzSm]="8">
+          <div class="category-group" [class.active]="hasPrinterCheck()">
+            <div class="category-header">
+              <span nz-icon nzType="printer" nzTheme="outline"></span>
+              <span>Printer</span>
+            </div>
+            <div [formGroup]="printerGroup" class="checkbox-list">
+              <label nz-checkbox formControlName="noPowerDeadset">No power / Deadset</label>
+              <label nz-checkbox formControlName="paperJam">Paper jam</label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <nz-divider nzDashed></nz-divider>
+
+      <nz-form-item>
+        <nz-form-label>Other Concerns</nz-form-label>
+        <nz-form-control nzExtra="Describe any issue not covered by the checkboxes above">
+          <textarea
+            nz-input
+            formControlName="othersConcerns"
+            [nzAutosize]="{ minRows: 2, maxRows: 5 }"
+            placeholder="e.g. Monitor flickering, keyboard not responding"
+          ></textarea>
+        </nz-form-control>
+      </nz-form-item>
+    </div>
+  </nz-card>
+}
+
+<!-- â”€â”€ 3. END-USER INFORMATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<nz-card nzTitle="End-User Information" [nzSize]="'small'" class="section-card">
+  <div [formGroup]="endUserGroup">
+    <div nz-row [nzGutter]="16">
+      <div nz-col [nzXs]="24" [nzSm]="12">
+        <nz-form-item>
+          <nz-form-label>Name</nz-form-label>
+          <nz-form-control>
+            <input
+              nz-input
+              formControlName="name"
+              placeholder="Your full name"
+              class="readonly-field"
+              readonly
+            />
+          </nz-form-control>
+        </nz-form-item>
+      </div>
+      <div nz-col [nzXs]="24" [nzSm]="12">
+        <nz-form-item>
+          <nz-form-label>Date</nz-form-label>
+          <nz-form-control>
+            <input nz-input type="date" formControlName="date" class="readonly-field" readonly />
+          </nz-form-control>
+        </nz-form-item>
+      </div>
+    </div>
+
+    <div nz-row [nzGutter]="16">
+      <div nz-col [nzXs]="24" [nzSm]="12">
+        <nz-form-item>
+          <nz-form-label>Department / Unit</nz-form-label>
+          <nz-form-control>
+            <input
+              nz-input
+              formControlName="departmentUnit"
+              placeholder="Your department or unit"
+            />
+          </nz-form-control>
+        </nz-form-item>
+      </div>
+      <div nz-col [nzXs]="24" [nzSm]="12">
+        <nz-form-item>
+          <nz-form-label>MRN</nz-form-label>
+          <nz-form-control nzExtra="Medical record number, if applicable">
+            <input nz-input formControlName="mrn" placeholder="MRN number" />
+          </nz-form-control>
+        </nz-form-item>
+      </div>
+    </div>
+  </div>
+</nz-card>
+
+<!-- â”€â”€ 4. ADDITIONAL NOTES â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ -->
+<nz-form-item>
+  <nz-form-label>
+    Additional Notes
+    <span class="optional-label">(Optional)</span>
+  </nz-form-label>
+  <nz-form-control nzExtra="Any extra context that might help the ICT team">
+    <div [formGroup]="formGroup">
+      <textarea
+        nz-input
+        formControlName="details"
+        [nzAutosize]="{ minRows: 3, maxRows: 8 }"
+        placeholder="Add any useful details about your request"
+      ></textarea>
+    </div>
+  </nz-form-control>
+</nz-form-item>

@@ -1,0 +1,216 @@
+<nz-layout class="app-layout">
+  <nz-sider
+    class="menu-sidebar"
+    nzCollapsible
+    nzWidth="256px"
+    nzBreakpoint="md"
+    [(nzCollapsed)]="isCollapsed"
+    [nzTrigger]="null"
+  >
+    <div class="sidebar-logo">
+      <img src="assets/chmsu-logo.png" alt="CHMSU Logo" width="40" height="40" />
+      @if (!isCollapsed) {
+        <h1>ICT TICKET</h1>
+      }
+    </div>
+    <ul nz-menu nzTheme="dark" nzMode="inline" [nzInlineCollapsed]="isCollapsed">
+      @for (item of menuItems(); track item.path) {
+        <li
+          nz-menu-item
+          [routerLink]="item.path"
+          routerLinkActive="ant-menu-item-selected"
+          [routerLinkActiveOptions]="{ exact: item.path === '/tickets' }"
+        >
+          <span nz-icon [nzType]="item.icon"></span>
+          <span>{{ item.label }}</span>
+        </li>
+      }
+    </ul>
+  </nz-sider>
+  <nz-layout>
+    <nz-header>
+      <div class="app-header">
+        <i
+          class="header-trigger cursor-pointer"
+          nz-icon
+          [nzType]="isCollapsed ? 'menu-unfold' : 'menu-fold'"
+          (click)="isCollapsed = !isCollapsed"
+          aria-label="Toggle sidebar"
+        ></i>
+        <div class="header-right">
+          <!-- Notification Bell -->
+          <app-notification-bell></app-notification-bell>
+
+          <div
+            nz-dropdown
+            [nzDropdownMenu]="userMenu"
+            nzTrigger="click"
+            nzPlacement="bottomRight"
+            class="user-profile-trigger"
+          >
+            <a class="user-info">
+              <div class="user-role-badge">
+                <span class="role-label">{{ getUserRoleLabel() }}</span>
+              </div>
+              @if (avatarSrc(); as avatar) {
+                <img
+                  [src]="avatar"
+                  (load)="onAvatarLoad()"
+                  (error)="handleAvatarError()"
+                  alt="User avatar"
+                  class="user-avatar"
+                  width="32"
+                  height="32"
+                />
+              } @else {
+                <div class="user-avatar user-avatar-fallback">{{ userInitial() }}</div>
+              }
+            </a>
+          </div>
+
+          <nz-dropdown-menu #userMenu="nzDropdownMenu">
+            <ul nz-menu>
+              <li nz-menu-item (click)="openProfile()">
+                <i nz-icon nzType="user" nzTheme="outline"></i>
+                <span class="space-left">Profile</span>
+              </li>
+              <li nz-menu-divider></li>
+              <li nz-menu-item (click)="logout()">
+                <i nz-icon nzType="logout" nzTheme="outline"></i>
+                <span class="space-left">Logout</span>
+              </li>
+            </ul>
+          </nz-dropdown-menu>
+        </div>
+      </div>
+    </nz-header>
+    <nz-content>
+      <div class="inner-content">
+        <router-outlet />
+      </div>
+    </nz-content>
+    <nz-footer class="app-footer">
+      <div class="footer-content">
+        Crafted by:
+        <a href="https://github.com/mmeguizo" target="_blank" rel="noopener noreferrer">
+          meguizo
+        </a>
+      </div>
+    </nz-footer>
+  </nz-layout>
+</nz-layout>
+
+<!-- Profile modal -->
+<nz-modal
+  [(nzVisible)]="isProfileOpen"
+  nzTitle="Edit Profile"
+  nzOkText="Save"
+  nzCancelText="Cancel"
+  [nzOkDisabled]="!hasProfileChanges()"
+  (nzOnCancel)="closeProfile()"
+  (nzOnOk)="saveProfile()"
+>
+  <ng-container *nzModalContent>
+    <form nz-form [formGroup]="profileForm" nzLayout="vertical">
+      <nz-form-item>
+        <nz-form-label>Email</nz-form-label>
+        <nz-form-control>
+          <input
+            nz-input
+            [value]="userEmail() || 'Loading...'"
+            readonly
+            disabled
+            class="email-readonly"
+          />
+        </nz-form-control>
+      </nz-form-item>
+
+      <nz-form-item>
+        <nz-form-label>Profile Picture</nz-form-label>
+        <nz-form-control>
+          <div class="avatar-upload-container">
+            @if (avatarSrc(); as avatar) {
+              <img
+                [src]="avatar"
+                (load)="onAvatarLoad()"
+                (error)="handleAvatarError()"
+                alt="User avatar"
+                class="profile-avatar-preview"
+                width="80"
+                height="80"
+              />
+            } @else {
+              <div class="profile-avatar-preview profile-avatar-fallback">{{ userInitial() }}</div>
+            }
+            <input
+              type="file"
+              accept="image/*"
+              (change)="onFileSelected($event)"
+              #fileInput
+              style="display: none"
+            />
+            &nbsp;
+            <button nz-button nzType="default" (click)="fileInput.click()" type="button">
+              <i nz-icon nzType="upload"></i>
+              Change Avatar
+            </button>
+          </div>
+        </nz-form-control>
+      </nz-form-item>
+
+      <nz-form-item>
+        <nz-form-label>Display Name</nz-form-label>
+        <nz-form-control>
+          <input nz-input formControlName="displayName" placeholder="Your name" />
+        </nz-form-control>
+      </nz-form-item>
+
+      <nz-form-item>
+        <nz-form-label>New Password (optional)</nz-form-label>
+        <nz-form-control>
+          <nz-input-group [nzSuffix]="passwordSuffixTemplate">
+            <input
+              nz-input
+              [type]="showPassword() ? 'text' : 'password'"
+              formControlName="password"
+              placeholder="Leave blank to keep current"
+            />
+          </nz-input-group>
+          <ng-template #passwordSuffixTemplate>
+            <i
+              nz-icon
+              [nzType]="showPassword() ? 'eye-invisible' : 'eye'"
+              (click)="showPassword.set(!showPassword())"
+              class="cursor-pointer"
+            ></i>
+          </ng-template>
+        </nz-form-control>
+      </nz-form-item>
+
+      <nz-form-item>
+        <nz-form-label>Confirm Password</nz-form-label>
+        <nz-form-control>
+          <nz-input-group [nzSuffix]="confirmSuffixTemplate">
+            <input
+              nz-input
+              [type]="showConfirm() ? 'text' : 'password'"
+              formControlName="confirm"
+              placeholder="Confirm new password"
+            />
+          </nz-input-group>
+          <ng-template #confirmSuffixTemplate>
+            <i
+              nz-icon
+              [nzType]="showConfirm() ? 'eye-invisible' : 'eye'"
+              (click)="showConfirm.set(!showConfirm())"
+              class="cursor-pointer"
+            ></i>
+          </ng-template>
+        </nz-form-control>
+      </nz-form-item>
+    </form>
+  </ng-container>
+</nz-modal>
+
+<!-- AI Chat Widget -->
+<app-chat-widget></app-chat-widget>

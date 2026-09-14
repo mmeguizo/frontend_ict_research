@@ -1,0 +1,456 @@
+<!--
+  My Tickets Page Template
+
+  Role-based views:
+  - USER: Shows tickets they created
+  - MIS_HEAD/ITS_HEAD: Shows tickets to assign, with assignment dropdown
+  - DEVELOPER/TECHNICAL: Shows assigned tickets, with status update buttons
+  - ADMIN/SECRETARY: Shows all tickets
+-->
+
+<nz-card [nzTitle]="titleTemplate" [nzExtra]="extraTemplate">
+  <nz-spin [nzSpinning]="loading()">
+    <!-- Page subtitle -->
+    <p class="page-subtitle">{{ pageSubtitle() }}</p>
+
+    <!-- Filter bar -->
+    <div class="filter-bar">
+      <nz-select [(ngModel)]="statusFilter" nzPlaceHolder="Filter by status" style="width: 200px">
+        <nz-option nzValue="ALL" nzLabel="All Statuses"></nz-option>
+        <nz-option nzValue="FOR_REVIEW" nzLabel="For Review"></nz-option>
+        <nz-option nzValue="REVIEWED" nzLabel="Reviewed"></nz-option>
+        <nz-option nzValue="DIRECTOR_APPROVED" nzLabel="Director Approved"></nz-option>
+        <nz-option nzValue="ASSIGNED" nzLabel="Assigned"></nz-option>
+        <nz-option nzValue="PENDING" nzLabel="Pending"></nz-option>
+        <nz-option nzValue="IN_PROGRESS" nzLabel="In Progress"></nz-option>
+        <nz-option nzValue="ON_HOLD" nzLabel="On Hold"></nz-option>
+        <nz-option nzValue="RESOLVED" nzLabel="Resolved"></nz-option>
+        <nz-option nzValue="CLOSED" nzLabel="Closed"></nz-option>
+        <nz-option nzValue="CANCELLED" nzLabel="Cancelled"></nz-option>
+      </nz-select>
+    </div>
+
+    <!-- Tickets table -->
+    <div class="table-wrapper">
+      <nz-table
+        #ticketTable
+        [nzData]="filteredTickets()"
+        [nzShowPagination]="true"
+        [nzPageSize]="10"
+        [nzSize]="'middle'"
+      >
+        <thead>
+          <tr>
+            <th>Ticket #</th>
+            <th>Type</th>
+            <th>Title</th>
+            <th>Status</th>
+            <th>Priority</th>
+            @if (canViewAllTickets()) {
+              <th>Created By</th>
+            }
+            <th>Assigned To</th>
+            <th>Created</th>
+            <th>Visit Date</th>
+            <th>Target Completion</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @if (filteredTickets().length === 0) {
+            <tr>
+              <td [attr.colspan]="canViewAllTickets() ? 11 : 10">
+                <nz-empty nzNotFoundContent="No tickets found"></nz-empty>
+              </td>
+            </tr>
+          }
+          @for (ticket of ticketTable.data; track ticket.id) {
+            <tr>
+              <td>
+                <a [routerLink]="['/tickets', ticket.ticketNumber]">
+                  {{ ticket.ticketNumber }}
+                </a>
+              </td>
+              <td>
+                <nz-tag [nzColor]="ticket.type === 'MIS' ? 'blue' : 'green'">
+                  {{ ticket.type }}
+                </nz-tag>
+              </td>
+              <td class="title-cell">{{ ticket.title }}</td>
+              <td>
+                <nz-tag [nzColor]="getStatusColor(ticket.status)">
+                  {{ ticket.status.replace('_', ' ') }}
+                </nz-tag>
+              </td>
+              <td>
+                <nz-tag [nzColor]="getPriorityColor(ticket.priority)">
+                  {{ ticket.priority }}
+                </nz-tag>
+              </td>
+              @if (canViewAllTickets()) {
+                <td>{{ ticket.createdBy.name || 'Unknown' }}</td>
+              }
+              <td>{{ getAssignedStaff(ticket) }}</td>
+              <td>{{ formatDate(ticket.createdAt) }}</td>
+              <td>{{ ticket.dateToVisit ? formatDate(ticket.dateToVisit) : '-' }}</td>
+              <td>
+                {{ ticket.targetCompletionDate ? formatDate(ticket.targetCompletionDate) : '-' }}
+              </td>
+              <td>
+                <div class="action-cell">
+                  <!-- Review button (for Admin/Secretary on FOR_REVIEW tickets) -->
+                  @if (canReview(ticket) && isSecretary()) {
+                    <button
+                      nz-button
+                      nzType="primary"
+                      nzSize="small"
+                      nz-tooltip="Review this ticket (approve or reject with notes)"
+                      (click)="openReviewModal(ticket.id)"
+                    >
+                      Review
+                    </button>
+                  }
+
+                  @if (canReviewAdmin(ticket)) {
+                    <button
+                      nz-button
+                      nzType="primary"
+                      nzSize="small"
+                      nz-tooltip="Review this ticket (approve or reject with notes)"
+                      (click)="openReviewModal(ticket.id)"
+                    >
+                      Endorse
+                    </button>
+                  }
+
+                  <!-- View button (always visible) -->
+                  <a
+                    nz-button
+                    nzType="link"
+                    nzSize="small"
+                    [routerLink]="['/tickets', ticket.ticketNumber]"
+                  >
+                    View
+                  </a>
+
+                  <!-- Acknowledge button (for Department Heads on ASSIGNED tickets) -->
+                  <!-- Includes staff assignment + developer name + dates in one step -->
+                  @if (canHeadAcknowledge(ticket)) {
+                    <button
+                      nz-button
+                      nzType="primary"
+                      nzSize="small"
+                      nz-tooltip="Acknowledge ticket and assign developer name"
+                      (click)="openHeadAcknowledgeModal(ticket.id)"
+                    >
+                      Acknowledge
+                    </button>
+                  }
+
+                  <!-- Update Resolution button (for Department Heads) -->
+                  @if (canUpdateResolution(ticket)) {
+                    <button
+                      nz-button
+                      nzType="default"
+                      nzSize="small"
+                      [nz-tooltip]="ticket.resolution ? 'Update resolution' : 'Add resolution'"
+                      (click)="openResolutionModal(ticket.id, ticket.resolution)"
+                    >
+                      {{ ticket.resolution ? 'Update Resolution' : 'Add Resolution' }}
+                    </button>
+                  }
+
+                  <!-- Update Status button (for Staff on their assigned tickets) -->
+                  @if (canUpdate(ticket)) {
+                    <button
+                      nz-button
+                      nzType="default"
+                      nzSize="small"
+                      nz-tooltip="Update ticket status"
+                      (click)="
+                        openStatusModal(ticket.id, ticket.status, ticket.targetCompletionDate)
+                      "
+                    >
+                      Update
+                    </button>
+                  }
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </nz-table>
+    </div>
+  </nz-spin>
+</nz-card>
+
+<!-- Page title template -->
+<ng-template #titleTemplate>
+  <span class="page-title">{{ pageTitle() }}</span>
+</ng-template>
+
+<!-- Extra template (refresh button) -->
+<ng-template #extraTemplate>
+  <div style="display: flex; gap: 8px">
+    @if (canCreateTicket()) {
+      <button nz-button nzType="primary" routerLink="/tickets/new">
+        <i nz-icon nzType="plus-circle" nzTheme="outline"></i>
+        Create Ticket
+      </button>
+    }
+    <button nz-button nzType="default" (click)="loadTickets()">
+      <i nz-icon nzType="reload" nzTheme="outline"></i>
+      Refresh
+    </button>
+  </div>
+</ng-template>
+
+<!-- Status Update Modal (for Staff) -->
+<nz-modal
+  [(nzVisible)]="showStatusModal"
+  nzTitle="Update Ticket Status"
+  [nzOkText]="'Update'"
+  [nzCancelText]="'Cancel'"
+  (nzOnOk)="confirmStatusUpdate()"
+  (nzOnCancel)="closeStatusModal()"
+>
+  <ng-container *nzModalContent>
+    <div class="form-group" style="margin-bottom: 16px">
+      <label>New Status:</label>
+      <nz-select [(ngModel)]="selectedStatus" nzPlaceHolder="Select new status" style="width: 100%">
+        @for (option of statusOptions; track option.value) {
+          <nz-option [nzValue]="option.value" [nzLabel]="option.label"></nz-option>
+        }
+      </nz-select>
+    </div>
+
+    <!-- Target Completion Date - Developer sets this -->
+    <div class="form-group" style="margin-bottom: 16px">
+      <label>Target Completion Date:</label>
+      <nz-date-picker
+        style="width: 100%"
+        [ngModel]="statusTargetCompletionDate()"
+        (ngModelChange)="statusTargetCompletionDate.set($event)"
+        nzPlaceHolder="Set target completion date"
+        [nzDisabledDate]="disablePastDates"
+      ></nz-date-picker>
+      <p style="margin-top: 4px; color: #666; font-size: 12px">
+        <i nz-icon nzType="info-circle" nzTheme="outline"></i>
+        Set or update the expected completion date for this ticket.
+      </p>
+    </div>
+
+    <div class="form-group">
+      <label>Comment (optional):</label>
+      <textarea
+        nz-input
+        [(ngModel)]="statusComment"
+        rows="3"
+        placeholder="Add a note about this status change..."
+      ></textarea>
+    </div>
+  </ng-container>
+</nz-modal>
+
+<!-- Secretary Review Modal (for Admin/Secretary) -->
+<nz-modal
+  [nzVisible]="showReviewModal()"
+  (nzVisibleChange)="showReviewModal.set($event)"
+  nzTitle="Review Ticket"
+  [nzFooter]="reviewModalFooter"
+  [nzClosable]="true"
+  (nzOnCancel)="closeReviewModal()"
+>
+  <ng-container *nzModalContent>
+    <p>Please review this ticket. You can:</p>
+    <ul>
+      @if (isAdmin()) {
+        <li><strong>Endorsed:</strong> Forward to the Office Head for assignment</li>
+      }
+      @if (isSecretary()) {
+        <li><strong>Reviewed:</strong> Forward to the Director for Endorsement</li>
+      }
+      <li><strong>Reject:</strong> Return to requester with notes</li>
+    </ul>
+
+    <div class="form-group" style="margin-top: 16px">
+      <label
+        >Notes/Comments: <span class="required" *ngIf="reviewAction() === 'reject'">*</span></label
+      >
+      <textarea
+        nz-input
+        [ngModel]="reviewComment()"
+        (ngModelChange)="reviewComment.set($event)"
+        rows="4"
+        [placeholder]="
+          reviewAction() === 'reject'
+            ? 'Enter the reason for rejection (required). This will be visible to the requester...'
+            : 'Add any comments about this ticket (optional)...'
+        "
+      ></textarea>
+    </div>
+  </ng-container>
+
+  <ng-template #reviewModalFooter>
+    <button nz-button nzType="default" (click)="closeReviewModal()">Cancel</button>
+    <button
+      nz-button
+      nzType="default"
+      nzDanger
+      [nzLoading]="loading()"
+      (click)="reviewAction.set('reject'); confirmReview()"
+    >
+      Reject with Notes
+    </button>
+    <button
+      nz-button
+      nzType="primary"
+      [nzLoading]="loading()"
+      (click)="reviewAction.set('approve'); confirmReview()"
+    >
+      {{ isAdmin() ? 'Endorsed' : 'Reviewed' }} & Forward
+    </button>
+  </ng-template>
+</nz-modal>
+
+<!-- Head Acknowledge & Assign Developer Modal (for Department Heads) -->
+<!-- Single modal that combines staff assignment + developer name + scheduling -->
+<nz-modal
+  [(nzVisible)]="showHeadAcknowledgeModal"
+  nzTitle="Acknowledge & Assign Developer"
+  [nzOkText]="'Acknowledge'"
+  [nzCancelText]="'Cancel'"
+  [nzOkLoading]="loading()"
+  [nzOkDisabled]="!headAckDeveloperName().trim()"
+  [nzWidth]="550"
+  (nzOnOk)="confirmHeadAcknowledge()"
+  (nzOnCancel)="closeHeadAcknowledgeModal()"
+>
+  <ng-container *nzModalContent>
+    <p class="info-text" style="margin-bottom: 16px; color: #666">
+      <i nz-icon nzType="info-circle" nzTheme="outline"></i>
+      Acknowledge this ticket and enter the developer/technician who will handle it.
+    </p>
+
+    <!-- Staff Member Selection (optional - assign from system users) -->
+    <div class="form-group" style="margin-bottom: 16px">
+      <label>Assign Staff Member (optional):</label>
+      <nz-select
+        [(ngModel)]="selectedUserId"
+        nzPlaceHolder="Select staff member from system"
+        nzShowSearch
+        nzAllowClear
+        style="width: 100%"
+      >
+        @for (staff of staffList(); track staff.id) {
+          <nz-option [nzValue]="staff.id" [nzLabel]="staff.name || staff.email"></nz-option>
+        }
+      </nz-select>
+      <p style="margin-top: 4px; color: #999; font-size: 12px">
+        Select a staff member from the system to assign them to this ticket.
+      </p>
+    </div>
+
+    <!-- Staff Name (required) -->
+    <div class="form-group" style="margin-bottom: 16px">
+      <label><span class="required">*</span> Staff Name:</label>
+      <input
+        nz-input
+        [ngModel]="headAckDeveloperName()"
+        (ngModelChange)="headAckDeveloperName.set($event)"
+        placeholder="Enter the staff name"
+      />
+    </div>
+
+    <!-- Date to Visit (optional) -->
+    <div class="form-group" style="margin-bottom: 16px">
+      <label>Date to Visit:</label>
+      <nz-date-picker
+        style="width: 100%"
+        [ngModel]="headAckDateToVisit()"
+        (ngModelChange)="headAckDateToVisit.set($event)"
+        nzPlaceHolder="Select date to visit (optional)"
+        [nzDisabledDate]="disablePastDates"
+      ></nz-date-picker>
+    </div>
+
+    <!-- Target Completion Date (optional) -->
+    <div class="form-group" style="margin-bottom: 16px">
+      <label>Target Completion Date:</label>
+      <nz-date-picker
+        style="width: 100%"
+        [ngModel]="headAckTargetCompletion()"
+        (ngModelChange)="headAckTargetCompletion.set($event)"
+        nzPlaceHolder="Set target completion date (optional)"
+        [nzDisabledDate]="disablePastDates"
+      ></nz-date-picker>
+    </div>
+
+    <!-- Comment (optional) -->
+    <div class="form-group">
+      <label>Comment (optional):</label>
+      <textarea
+        nz-input
+        [ngModel]="headAckComment()"
+        (ngModelChange)="headAckComment.set($event)"
+        rows="3"
+        placeholder="Add any notes about this assignment..."
+      ></textarea>
+    </div>
+  </ng-container>
+</nz-modal>
+
+<!-- Resolution Update Modal (for Department Heads) -->
+<nz-modal
+  [(nzVisible)]="showResolutionModal"
+  nzTitle="Update Resolution"
+  [nzOkText]="'Submit'"
+  [nzCancelText]="'Cancel'"
+  [nzOkLoading]="loading()"
+  [nzOkDisabled]="!resolutionText().trim()"
+  [nzWidth]="600"
+  (nzOnOk)="confirmResolution()"
+  (nzOnCancel)="closeResolutionModal()"
+>
+  <ng-container *nzModalContent>
+    <p class="info-text" style="margin-bottom: 16px; color: #666">
+      <i nz-icon nzType="info-circle" nzTheme="outline"></i>
+      Document the resolution and outcome for this ticket.
+    </p>
+
+    <!-- Resolution Text (required) -->
+    <div class="form-group" style="margin-bottom: 16px">
+      <label><span class="required">*</span> Resolution:</label>
+      <textarea
+        nz-input
+        [ngModel]="resolutionText()"
+        (ngModelChange)="resolutionText.set($event)"
+        rows="5"
+        placeholder="Describe what was done to resolve this ticket..."
+      ></textarea>
+    </div>
+
+    <!-- Date Finished (optional) -->
+    <div class="form-group" style="margin-bottom: 16px">
+      <label>Date Finished:</label>
+      <nz-date-picker
+        style="width: 100%"
+        [ngModel]="resolutionDateFinished()"
+        (ngModelChange)="resolutionDateFinished.set($event)"
+        nzPlaceHolder="Select date finished (defaults to now)"
+      ></nz-date-picker>
+    </div>
+
+    <!-- Comment (optional) -->
+    <div class="form-group">
+      <label>Additional Comment (optional):</label>
+      <textarea
+        nz-input
+        [ngModel]="resolutionComment()"
+        (ngModelChange)="resolutionComment.set($event)"
+        rows="3"
+        placeholder="Any additional notes..."
+      ></textarea>
+    </div>
+  </ng-container>
+</nz-modal>

@@ -1,0 +1,1918 @@
+import {
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  ViewChild,
+  AfterViewChecked,
+  HostListener,
+  OnDestroy,
+  inject,
+  signal,
+  computed,
+  DestroyRef,
+  OnInit,
+} from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Subscription } from 'rxjs';
+import { NzDrawerModule } from 'ng-zorro-antd/drawer';
+import { NzButtonModule } from 'ng-zorro-antd/button';
+import { NzIconModule } from 'ng-zorro-antd/icon';
+import { NzInputModule } from 'ng-zorro-antd/input';
+import { NzSpinModule } from 'ng-zorro-antd/spin';
+import { NzEmptyModule } from 'ng-zorro-antd/empty';
+import { NzBadgeModule } from 'ng-zorro-antd/badge';
+import { NzToolTipModule } from 'ng-zorro-antd/tooltip';
+import { NzPopconfirmModule } from 'ng-zorro-antd/popconfirm';
+import { NzMessageService } from 'ng-zorro-antd/message';
+import { ChatService, ChatSession, ChatMessage, ChatReplyChunk } from '../../core/services/chat.service';
+import { AuthService } from '../../core/services/auth.service';
+import { environment } from '../../core/config/environment';
+import { getAvatarInitial, resolveAvatarUrl } from '../avatar.utils';
+import { marked } from 'marked';
+
+type QuickPrompt = {
+  prompt: string;
+  label: string;
+  emoji: string;
+};
+
+const TICKET_DATA_BLOCK_REGEX = /```ticket-data\s*[\s\S]*?```/g;
+const QUICK_OPTIONS_BLOCK_REGEX = /```show-quick-options\s*[\s\S]*?```/g;
+
+const COMMON_QUICK_PROMPTS: QuickPrompt[] = [
+  { prompt: 'My internet is not working', label: 'Internet / Network', emoji: '🌐' },
+  { prompt: 'My printer is not printing', label: 'Printer Issues', emoji: '🖨️' },
+  { prompt: 'I need software installed or updated', label: 'Software / Apps', emoji: '💻' },
+  {
+    prompt: 'I have a problem with my account or password',
+    label: 'Account / Password',
+    emoji: '🔐',
+  },
+  { prompt: 'What is the status of my tickets?', label: 'Check Ticket Status', emoji: '📋' },
+];
+
+const USER_QUICK_PROMPTS: QuickPrompt[] = [
+  { prompt: 'I want to create a support ticket', label: 'Create Ticket', emoji: '🎫' },
+];
+
+type UserDepartment = 'ITS' | 'MIS' | 'BOTH' | 'GENERAL';
+
+function roleToDepartment(role: string | undefined): UserDepartment {
+  switch (role) {
+    case 'ITS_HEAD':
+    case 'TECHNICAL':
+      return 'ITS';
+    case 'MIS_HEAD':
+      return 'MIS';
+    case 'ADMIN':
+    case 'DEVELOPER':
+      return 'BOTH';
+    default:
+      return 'GENERAL';
+  }
+}
+
+function staffQuickPrompts(department: UserDepartment): QuickPrompt[] {
+  const prompts: QuickPrompt[] = [
+    {
+      prompt: 'Show me the ICT statistics and analytics',
+      label: 'ICT Analytics',
+      emoji: '📊',
+    },
+    {
+      prompt: 'Generate a full Excel report of all tickets',
+      label: 'Download Report',
+      emoji: '📥',
+    },
+    {
+      prompt: 'Show me overdue tickets and SLA warnings',
+      label: 'SLA Warnings',
+      emoji: '⚠️',
+    },
+  ];
+
+  if (department === 'ITS' || department === 'BOTH') {
+    prompts.push(
+      {
+        prompt: 'Show me overdue ITS tickets',
+        label: 'Overdue ITS Tickets',
+        emoji: '🔧',
+      },
+      {
+        prompt: 'What is the hardware maintenance queue status?',
+        label: 'Maintenance Queue',
+        emoji: '🛠️',
+      },
+    );
+  }
+
+  if (department === 'MIS' || department === 'BOTH') {
+    prompts.push(
+      {
+        prompt: 'Show me pending software and website requests',
+        label: 'Pending MIS Requests',
+        emoji: '🌐',
+      },
+      {
+        prompt: 'Show account management and access requests',
+        label: 'Account Requests',
+        emoji: '👤',
+      },
+    );
+  }
+
+  return prompts;
+}
+
+const HELP_QUICK_PROMPT: QuickPrompt = {
+  prompt: '/help',
+  label: 'Help / Commands',
+  emoji: '❓',
+};
+
+// Configure marked once: GFM tables enabled by default, breaks converts \n to <br>, headings use compact divs
+marked.use({
+  breaks: true,
+  renderer: {
+    heading(token): string {
+      return `<div class="chat-h${token.depth}">${token.text}</div>\n`;
+    },
+  },
+});
+
+@Component({
+  selector: 'app-chat-widget',
+  standalone: true,
+  imports: [
+    CommonModule,
+    FormsModule,
+    NzDrawerModule,
+    NzButtonModule,
+    NzIconModule,
+    NzInputModule,
+    NzSpinModule,
+    NzEmptyModule,
+    NzBadgeModule,
+    NzToolTipModule,
+    NzPopconfirmModule,
+  ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  template: `
+    <!-- Shared SVG gradient defs — referenced by all bot icons in this component -->
+    <svg width="0" height="0" style="position:absolute;overflow:hidden;pointer-events:none">
+      <defs>
+        <linearGradient id="cwHead" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#5567d5" />
+          <stop offset="100%" stop-color="#2c3a9e" />
+        </linearGradient>
+        <radialGradient id="cwEye" cx="35%" cy="30%" r="70%">
+          <stop offset="0%" stop-color="#7ff0fd" />
+          <stop offset="50%" stop-color="#22d3ee" />
+          <stop offset="100%" stop-color="#0891b2" />
+        </radialGradient>
+      </defs>
+    </svg>
+
+    <!-- 3D Robot icon template — reused in FAB, header, chat message avatars -->
+    <ng-template #botSvg>
+      <svg
+        class="bot-svg"
+        viewBox="0 0 48 48"
+        xmlns="http://www.w3.org/2000/svg"
+        aria-hidden="true"
+      >
+        <!-- Drop shadow -->
+        <ellipse cx="24" cy="45" rx="11" ry="2" fill="rgba(0,0,0,0.18)" />
+        <!-- Left ear -->
+        <rect x="3" y="17" width="6" height="10" rx="3" fill="#4e5fd4" />
+        <rect x="4.5" y="19" width="3" height="6" rx="1.5" fill="#1e2a8c" />
+        <!-- Right ear -->
+        <rect x="39" y="17" width="6" height="10" rx="3" fill="#4e5fd4" />
+        <rect x="39.5" y="19" width="3" height="6" rx="1.5" fill="#1e2a8c" />
+        <!-- Antenna stem -->
+        <rect x="22.5" y="4" width="3" height="7" rx="1.5" fill="#6b7ae8" />
+        <!-- Antenna ball -->
+        <circle cx="24" cy="3.5" r="3" fill="#f87171" />
+        <circle cx="22.8" cy="2.5" r="1.1" fill="rgba(255,255,255,0.65)" />
+        <!-- Head -->
+        <rect x="8" y="10" width="32" height="28" rx="8" fill="url(#cwHead)" />
+        <!-- Head highlight for 3D depth -->
+        <rect x="10" y="11" width="28" height="9" rx="7" fill="rgba(255,255,255,0.14)" />
+        <!-- Dark screen/face -->
+        <rect x="12" y="15" width="24" height="17" rx="5" fill="#0b1120" />
+        <!-- Screen glow border -->
+        <rect
+          x="12"
+          y="15"
+          width="24"
+          height="17"
+          rx="5"
+          fill="none"
+          stroke="rgba(34,211,238,0.25)"
+          stroke-width="1"
+        />
+        <!-- Eye ambient glow -->
+        <circle cx="18.5" cy="23" r="5" fill="rgba(34,211,238,0.12)" />
+        <circle cx="29.5" cy="23" r="5" fill="rgba(34,211,238,0.12)" />
+        <!-- Eyes -->
+        <circle cx="18.5" cy="23" r="3.8" fill="url(#cwEye)" />
+        <circle cx="29.5" cy="23" r="3.8" fill="url(#cwEye)" />
+        <!-- Eye specular highlights -->
+        <circle cx="17" cy="21.5" r="1.3" fill="rgba(255,255,255,0.82)" />
+        <circle cx="28" cy="21.5" r="1.3" fill="rgba(255,255,255,0.82)" />
+        <!-- Speaker dots -->
+        <circle cx="19.5" cy="29.5" r="1.1" fill="rgba(34,211,238,0.45)" />
+        <circle cx="24" cy="29.5" r="1.1" fill="rgba(34,211,238,0.45)" />
+        <circle cx="28.5" cy="29.5" r="1.1" fill="rgba(34,211,238,0.45)" />
+      </svg>
+    </ng-template>
+
+    <!-- Floating AI Chat Button — Redesigned -->
+    <div class="chat-fab-wrapper" (click)="toggleDrawer()">
+      <div class="chat-fab" [class.active]="isOpen()">
+        <div class="fab-icon">
+          @if (isOpen()) {
+            <span nz-icon nzType="close" nzTheme="outline"></span>
+          } @else {
+            <ng-container *ngTemplateOutlet="botSvg"></ng-container>
+          }
+        </div>
+        <span class="fab-label" [class.hidden]="isOpen()">AI Assistant</span>
+      </div>
+      <div class="fab-pulse" [class.hidden]="isOpen()"></div>
+    </div>
+
+    <!-- Floating Chat Window (Draggable, Minimizable, beautifully styled) -->
+    <div
+      *ngIf="isOpen()"
+      #chatWindow
+      class="chat-window"
+      [class.minimized]="isMinimized()"
+      [style.transform]="'translate(' + position().x + 'px, ' + position().y + 'px)'"
+    >
+      <!-- Header — Gradient branded with pointer-drag handles -->
+      <div
+        class="chat-header"
+        (pointerdown)="onHeaderPointerDown($event)"
+        (pointermove)="onHeaderPointerMove($event)"
+        (pointerup)="onHeaderPointerUp($event)"
+        (pointercancel)="onHeaderPointerUp($event)"
+      >
+        <div class="chat-header-left">
+          @if (activeSession()) {
+            <button
+              nz-button
+              nzType="text"
+              nzSize="small"
+              class="back-btn"
+              (click)="backToSessions(); $event.stopPropagation()"
+            >
+              <span nz-icon nzType="arrow-left"></span>
+            </button>
+            <span class="chat-header-title">{{ activeSession()!.title }}</span>
+          } @else {
+            <div class="header-brand">
+              <div class="brand-icon">
+                <ng-container *ngTemplateOutlet="botSvg"></ng-container>
+              </div>
+              <div class="brand-text">
+                <span class="chat-header-title">ICT AI Assistant</span>
+                <span class="header-subtitle">{{ headerSubtitle() }}</span>
+              </div>
+            </div>
+          }
+        </div>
+        <div class="chat-header-actions">
+          @if (!activeSession() && !isMinimized()) {
+            <button
+              nz-button
+              nzType="primary"
+              nzSize="small"
+              class="new-chat-btn"
+              (click)="startNewChat(); $event.stopPropagation()"
+            >
+              <span nz-icon nzType="plus"></span> New Chat
+            </button>
+          }
+          <!-- Minimize / Expand Toggle -->
+          <button
+            nz-button
+            nzType="text"
+            nzSize="small"
+            class="header-action-btn"
+            [nz-tooltip]="isMinimized() ? 'Expand Chat' : 'Minimize Chat'"
+            (click)="toggleMinimize(); $event.stopPropagation()"
+          >
+            <span nz-icon [nzType]="isMinimized() ? 'up' : 'minus'"></span>
+          </button>
+          <!-- Close Button -->
+          <button
+            nz-button
+            nzType="text"
+            nzSize="small"
+            class="header-action-btn"
+            nz-tooltip="Close"
+            (click)="closeDrawer(); $event.stopPropagation()"
+          >
+            <span nz-icon nzType="close"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Main/Body Area (Hidden when minimized) -->
+      <ng-container *ngIf="!isMinimized()">
+        <!-- Session List View -->
+        @if (!activeSession()) {
+          <div class="chat-session-list">
+            @if (loadingSessions()) {
+              <div class="chat-loading"><nz-spin nzSimple></nz-spin></div>
+            } @else if (sessions().length === 0) {
+              <div class="chat-empty">
+                <nz-empty nzNotFoundImage="simple" [nzNotFoundContent]="'No conversations yet'">
+                </nz-empty>
+                <button nz-button nzType="primary" (click)="startNewChat()" class="start-btn">
+                  <span nz-icon nzType="message"></span> Start a conversation
+                </button>
+              </div>
+            } @else {
+              @for (s of sessions(); track s.id) {
+                <div class="session-item" (click)="openSession(s)">
+                  <div class="session-info">
+                    <span class="session-title">{{ s.title }}</span>
+                    <span class="session-meta">
+                      {{ s.messageCount }} messages · {{ formatDate(s.updatedAt) }}
+                    </span>
+                  </div>
+                  <div class="session-actions">
+                    @if (s.status === 'TICKET_CREATED') {
+                      <span
+                        nz-icon
+                        nzType="check-circle"
+                        nzTheme="twotone"
+                        [nzTwotoneColor]="'#52c41a'"
+                        nz-tooltip
+                        nzTooltipTitle="Ticket created"
+                      ></span>
+                    }
+                    <button
+                      nz-button
+                      nzType="text"
+                      nzSize="small"
+                      nzDanger
+                      nz-popconfirm
+                      nzPopconfirmTitle="Delete this conversation?"
+                      (nzOnConfirm)="deleteSession(s.id)"
+                      (click)="$event.stopPropagation()"
+                    >
+                      <span nz-icon nzType="delete"></span>
+                    </button>
+                  </div>
+                </div>
+              }
+            }
+          </div>
+        }
+
+        <!-- Active Chat View -->
+        @if (activeSession()) {
+          <div class="chat-messages" #messagesContainer>
+            @if (loadingMessages()) {
+              <div class="chat-loading"><nz-spin nzSimple></nz-spin></div>
+            } @else {
+              @if (messages().length === 0) {
+                <div class="chat-welcome">
+                  <div class="welcome-hero">
+                    <div class="welcome-icon-wrapper">
+                      <ng-container *ngTemplateOutlet="botSvg"></ng-container>
+                    </div>
+                    <h3>Hi! I'm your ICT AI Assistant</h3>
+                    <p>
+                      @if (isStaffOrAdmin()) {
+                        I can help you check analytics, generate reports, monitor SLA compliance,
+                        troubleshoot issues, and search our knowledge base.
+                      } @else {
+                        I can troubleshoot your issues, look up solutions from our knowledge base,
+                        or help you create a support ticket.
+                      }
+                    </p>
+                  </div>
+                  <div class="quick-categories">
+                    <p class="quick-label">Common issues I can help with:</p>
+                    <div class="quick-prompts">
+                      @for (prompt of quickPrompts(); track prompt.prompt) {
+                        <button class="quick-btn" (click)="sendQuick(prompt.prompt)">
+                          <span class="quick-emoji">{{ prompt.emoji }}</span>
+                          <span class="quick-text">{{ prompt.label }}</span>
+                        </button>
+                      }
+                    </div>
+                  </div>
+                </div>
+              }
+
+              @for (msg of messages(); track msg.id) {
+                <div class="message" [class]="'message-' + msg.role.toLowerCase()">
+                  @if (msg.role === 'ASSISTANT') {
+                    <div class="message-avatar">
+                      <ng-container *ngTemplateOutlet="botSvg"></ng-container>
+                    </div>
+                  }
+                  <div
+                    class="message-bubble"
+                    [innerHTML]="renderMarkdown(msg.content)"
+                    (click)="onMessageClick($event)"
+                  ></div>
+                  @if (msg.role === 'USER') {
+                    <div class="message-avatar user">
+                      @if (currentUserAvatarSrc(); as avatarSrc) {
+                        <img
+                          [src]="avatarSrc"
+                          [alt]="currentUserInitial() + ' avatar'"
+                          (error)="onCurrentUserAvatarError()"
+                        />
+                      } @else {
+                        <span class="message-avatar-initial">{{ currentUserInitial() }}</span>
+                      }
+                    </div>
+                  }
+                </div>
+
+                <!-- Check for ticket-data in assistant message -->
+                @if (msg.role === 'ASSISTANT' && hasTicketData(msg.content)) {
+                  <div class="ticket-action">
+                    <button
+                      nz-button
+                      nzType="primary"
+                      nzSize="small"
+                      (click)="createTicketFromMessage(msg.content)"
+                      [nzLoading]="creatingTicket()"
+                    >
+                      <span nz-icon nzType="plus-circle"></span> Create Support Ticket
+                    </button>
+                  </div>
+                }
+
+                @if (msg.role === 'ASSISTANT' && hasQuickOptions(msg.content)) {
+                  <div class="message-quick-options">
+                    <p class="quick-inline-label">Try one of these:</p>
+                    <div class="quick-prompts quick-prompts-inline">
+                      @for (prompt of quickPrompts(); track prompt.prompt) {
+                        <button class="quick-btn" (click)="sendQuick(prompt.prompt)">
+                          <span class="quick-emoji">{{ prompt.emoji }}</span>
+                          <span class="quick-text">{{ prompt.label }}</span>
+                        </button>
+                      }
+                    </div>
+                  </div>
+                }
+              }
+
+              @if (streaming() && streamingRendered()) {
+                <div class="message message-assistant">
+                  <div class="message-avatar">
+                    <ng-container *ngTemplateOutlet="botSvg"></ng-container>
+                  </div>
+                  <div class="message-bubble stream-bubble"
+                       [innerHTML]="streamingRendered()"
+                       (click)="onMessageClick($event)">
+                  </div>
+                  @if (fallbackActive()) {
+                    <div class="reconnecting-indicator">
+                      <span nz-icon nzType="sync" nzTheme="outline" nzSpin></span>
+                      Reconnecting…
+                    </div>
+                  }
+                </div>
+              } @else if (sending() && !streaming()) {
+                <div class="message message-assistant">
+                  <div class="message-avatar">
+                    <ng-container *ngTemplateOutlet="botSvg"></ng-container>
+                  </div>
+                  <div class="message-bubble typing-bubble">
+                    <span class="typing-status">{{ typingStatus() }}</span>
+                    <div class="typing">
+                      <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                    </div>
+                  </div>
+                </div>
+              }
+
+              @if (replyState() === 'done' && lastProvider()) {
+                <div class="provider-chip" [class.offline]="lastProvider() === 'Offline'">
+                  <span nz-icon [nzType]="lastProvider() === 'Offline' ? 'disconnect' : 'robot'"></span>
+                  {{ lastProvider() === 'Offline' ? 'Offline mode' : 'Answered by ' + lastProvider() }}
+                </div>
+              }
+            }
+          </div>
+
+          <!-- Input Area -->
+          <div class="chat-input-area">
+            <textarea
+              nz-input
+              [(ngModel)]="inputMessage"
+              placeholder="Type your message… (Enter to send)"
+              [nzAutosize]="{ minRows: 2, maxRows: 4 }"
+              [disabled]="sending()"
+              (keydown)="onKeydown($event)"
+            ></textarea>
+            <div class="chat-input-actions">
+              <span class="input-hint">Shift+Enter for new line</span>
+              <button
+                nz-button
+                nzType="primary"
+                nzSize="small"
+                [disabled]="!inputMessage.trim() || sending()"
+                [nzLoading]="sending()"
+                (click)="send()"
+              >
+                <span nz-icon nzType="send" nzTheme="outline"></span>
+                Send
+              </button>
+            </div>
+          </div>
+        }
+      </ng-container>
+    </div>
+  `,
+  styles: [
+    `
+      :host {
+        display: contents;
+      }
+
+      /* ── Floating AI Button (Redesigned) ──────────── */
+      .chat-fab-wrapper {
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        z-index: 1000;
+        cursor: pointer;
+      }
+
+      .chat-fab {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 50px;
+        color: #fff;
+        box-shadow: 0 4px 16px rgba(102, 126, 234, 0.4);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        z-index: 2;
+
+        &:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 6px 24px rgba(102, 126, 234, 0.5);
+        }
+
+        &.active {
+          padding: 12px;
+          border-radius: 50%;
+        }
+      }
+
+      .fab-icon {
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+      }
+
+      /* 3D bot SVG — fills its parent container at any size */
+      .bot-svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      .fab-label {
+        font-weight: 600;
+        font-size: 14px;
+        white-space: nowrap;
+        transition: all 0.3s;
+        &.hidden {
+          display: none;
+        }
+      }
+
+      .fab-pulse {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 100%;
+        height: 100%;
+        border-radius: 50px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        animation: fab-ping 2s cubic-bezier(0, 0, 0.2, 1) 3;
+        z-index: 1;
+        &.hidden {
+          display: none;
+        }
+      }
+
+      @keyframes fab-ping {
+        0% {
+          transform: translate(-50%, -50%) scale(1);
+          opacity: 0.5;
+        }
+        75%,
+        100% {
+          transform: translate(-50%, -50%) scale(1.6);
+          opacity: 0;
+        }
+      }
+
+      /* ── Chat Window Overlay ───────────────────────── */
+      .chat-window {
+        position: fixed;
+        bottom: 90px;
+        right: 25px;
+        width: min(420px, calc(100vw - 32px));
+        height: min(580px, calc(100vh - 112px));
+        max-width: calc(100vw - 32px);
+        max-height: calc(100vh - 112px);
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+        display: flex;
+        flex-direction: column;
+        z-index: 1000;
+        overflow: hidden;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        transition:
+          height 0.3s cubic-bezier(0.25, 0.8, 0.25, 1),
+          transform 0.1s ease;
+        touch-action: none; /* Prevents default panning behavior under touch dragging */
+
+        &.minimized {
+          height: 52px !important;
+          width: min(280px, calc(100vw - 32px));
+          border-radius: 12px 12px 0 0;
+          bottom: 16px !important;
+        }
+      }
+
+      /* ── Header ─────────────────────────────────────── */
+      .chat-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 16px;
+        border-bottom: 1px solid #f0f0f0;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: #fff;
+        cursor: move;
+        user-select: none;
+        flex-shrink: 0;
+      }
+
+      .chat-header-left {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex: 1;
+        min-width: 0;
+      }
+
+      .back-btn {
+        color: #fff !important;
+      }
+
+      .header-brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .brand-icon {
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .brand-text {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .chat-header-title {
+        font-weight: 600;
+        font-size: 15px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .header-subtitle {
+        font-size: 11px;
+        opacity: 0.8;
+      }
+
+      .chat-header-actions {
+        display: flex;
+        gap: 4px;
+
+        button {
+          color: #fff !important;
+        }
+      }
+
+      /* ── Session list ─────────────────────────────── */
+      .chat-session-list {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px;
+        min-height: 0;
+      }
+
+      .session-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: background 0.2s;
+        margin-bottom: 4px;
+
+        &:hover {
+          background: #f5f5f5;
+        }
+      }
+
+      .session-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        flex: 1;
+        min-width: 0;
+      }
+
+      .session-title {
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .session-meta {
+        font-size: 12px;
+        color: #8c8c8c;
+      }
+
+      .session-actions {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      /* ── Chat messages ────────────────────────────── */
+      .chat-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        background: #fafbfc;
+        min-height: 0;
+      }
+
+      .chat-loading,
+      .chat-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        gap: 16px;
+      }
+
+      .start-btn {
+        margin-top: 8px;
+      }
+
+      /* ── Welcome Screen ───────────────────────────── */
+      .chat-welcome {
+        padding: 24px 8px;
+      }
+
+      .welcome-hero {
+        text-align: center;
+        margin-bottom: 28px;
+      }
+
+      .welcome-icon-wrapper {
+        width: 64px;
+        height: 64px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 16px;
+        animation: float 3s ease-in-out infinite;
+      }
+
+      @keyframes float {
+        0%,
+        100% {
+          transform: translateY(0);
+        }
+        50% {
+          transform: translateY(-6px);
+        }
+      }
+
+      .chat-welcome h3 {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1a1a2e;
+        margin: 0 0 6px;
+      }
+
+      .chat-welcome .welcome-hero p {
+        font-size: 13px;
+        color: #8c8c8c;
+        line-height: 1.6;
+        margin: 0;
+      }
+
+      .quick-categories {
+        .quick-label {
+          font-size: 12px;
+          font-weight: 600;
+          color: #8c8c8c;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          margin-bottom: 12px;
+        }
+      }
+
+      .quick-prompts {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .quick-btn {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 14px;
+        background: #fff;
+        border: 1px solid #e8e8e8;
+        border-radius: 12px;
+        cursor: pointer;
+        text-align: left;
+        transition: all 0.2s;
+
+        &:hover {
+          border-color: #667eea;
+          background: #f8f7ff;
+          transform: translateY(-1px);
+          box-shadow: 0 2px 8px rgba(102, 126, 234, 0.1);
+        }
+      }
+
+      .quick-emoji {
+        font-size: 20px;
+        flex-shrink: 0;
+      }
+
+      .quick-text {
+        font-size: 12px;
+        font-weight: 500;
+        color: #333;
+        line-height: 1.3;
+      }
+
+      /* ── Messages ─────────────────────────────────── */
+      .message {
+        display: flex;
+        gap: 8px;
+        max-width: 100%;
+
+        &.message-user {
+          justify-content: flex-end;
+        }
+
+        &.message-system {
+          justify-content: center;
+          .message-bubble {
+            background: #fffbe6;
+            border: 1px solid #ffe58f;
+            color: #614700;
+            font-size: 13px;
+            max-width: 90%;
+          }
+        }
+      }
+
+      .message-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 10px;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+
+        img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          border-radius: inherit;
+          display: block;
+        }
+
+        &.user {
+          background: linear-gradient(135deg, #52c41a, #389e0d);
+        }
+      }
+
+      .message-avatar-initial {
+        color: #fff;
+        font-size: 14px;
+        font-weight: 700;
+        line-height: 1;
+        text-transform: uppercase;
+      }
+
+      .message-bubble {
+        padding: 10px 14px;
+        border-radius: 14px;
+        line-height: 1.5;
+        word-break: break-word;
+        max-width: 80%;
+      }
+
+      .message-user .message-bubble {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-bottom-right-radius: 4px;
+      }
+
+      .message-assistant .message-bubble {
+        background: #fff;
+        color: #262626;
+        border: 1px solid #e8e8e8;
+        border-bottom-left-radius: 4px;
+
+        :host ::ng-deep {
+          p {
+            margin: 0 0 8px;
+            &:last-child {
+              margin: 0;
+            }
+          }
+          ul,
+          ol {
+            margin: 4px 0;
+            padding-left: 20px;
+          }
+          code {
+            background: #f0f0f0;
+            padding: 2px 5px;
+            border-radius: 4px;
+            font-size: 13px;
+          }
+          pre {
+            background: #1a1a2e;
+            color: #e8e8e8;
+            padding: 10px 14px;
+            border-radius: 8px;
+            overflow-x: auto;
+          }
+          strong {
+            font-weight: 600;
+          }
+          a.kb-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            background: #f0f5ff;
+            border: 1px solid #adc6ff;
+            border-radius: 4px;
+            color: #2f54eb;
+            font-size: 13px;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.2s;
+
+            &:hover {
+              background: #d6e4ff;
+              border-color: #597ef7;
+            }
+          }
+
+          a.report-download-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            margin: 4px 0;
+            background: linear-gradient(135deg, #52c41a 0%, #389e0d 100%);
+            border: none;
+            border-radius: 6px;
+            color: #fff;
+            font-size: 13px;
+            font-weight: 500;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(82, 196, 26, 0.3);
+
+            &:hover {
+              background: linear-gradient(135deg, #73d13d 0%, #52c41a 100%);
+              box-shadow: 0 4px 8px rgba(82, 196, 26, 0.4);
+              transform: translateY(-1px);
+            }
+          }
+
+          /* ── Markdown tables ─────────────────────────── */
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            margin: 8px 0;
+          }
+
+          thead tr th {
+            background: #f0f0ff;
+            padding: 6px 12px;
+            border: 1px solid #d0d0ee;
+            font-weight: 600;
+            text-align: left;
+            color: #434343;
+          }
+
+          tbody tr td {
+            padding: 6px 12px;
+            border: 1px solid #e8e8e8;
+          }
+
+          tbody tr:nth-child(even) td {
+            background: #f9f9ff;
+          }
+
+          /* ── Markdown headings ───────────────────────── */
+          .chat-h1 {
+            font-size: 16px;
+            font-weight: 700;
+            margin: 10px 0 4px;
+            border-bottom: 1px solid #e8e8e8;
+            padding-bottom: 4px;
+          }
+
+          .chat-h2 {
+            font-size: 15px;
+            font-weight: 600;
+            margin: 8px 0 4px;
+          }
+
+          .chat-h3 {
+            font-size: 14px;
+            font-weight: 600;
+            margin: 6px 0 4px;
+            color: #434343;
+          }
+
+          .chat-h4,
+          .chat-h5,
+          .chat-h6 {
+            font-size: 13px;
+            font-weight: 600;
+            margin: 4px 0;
+            color: #595959;
+          }
+
+          hr {
+            border: none;
+            border-top: 1px solid #e8e8e8;
+            margin: 8px 0;
+          }
+
+          blockquote {
+            border-left: 3px solid #667eea;
+            margin: 4px 0;
+            padding: 4px 12px;
+            background: #f8f7ff;
+            color: #595959;
+            border-radius: 0 4px 4px 0;
+          }
+        }
+      }
+
+      .typing-bubble {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 14px;
+      }
+
+      .typing-status {
+        font-size: 13px;
+        color: #595959;
+      }
+
+      .typing {
+        display: flex;
+        gap: 4px;
+
+        .dot {
+          width: 8px;
+          height: 8px;
+          background: #667eea;
+          border-radius: 50%;
+          animation: typing 1.4s infinite;
+
+          &:nth-child(2) {
+            animation-delay: 0.2s;
+          }
+          &:nth-child(3) {
+            animation-delay: 0.4s;
+          }
+        }
+      }
+
+      .provider-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-left: 40px;
+        margin-top: -8px;
+        margin-bottom: 8px;
+        padding: 2px 8px;
+        background: #f0f5ff;
+        border: 1px solid #d6e4ff;
+        border-radius: 12px;
+        font-size: 11px;
+        color: #2f54eb;
+
+        &.offline {
+          background: #fffbe6;
+          border-color: #ffe58f;
+          color: #614700;
+        }
+      }
+
+      .reconnecting-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-left: 40px;
+        margin-top: 4px;
+        padding: 2px 8px;
+        background: #fff7e6;
+        border: 1px solid #ffd591;
+        border-radius: 12px;
+        font-size: 11px;
+        color: #d46b08;
+      }
+
+      .chat-input-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .input-hint {
+        font-size: 11px;
+        color: #bfbfbf;
+      }
+
+      @keyframes typing {
+        0%,
+        60%,
+        100% {
+          transform: translateY(0);
+          opacity: 0.4;
+        }
+        30% {
+          transform: translateY(-6px);
+          opacity: 1;
+        }
+      }
+
+      .ticket-action {
+        display: flex;
+        justify-content: center;
+        margin: 4px 0;
+      }
+
+      .message-quick-options {
+        margin: -4px 0 8px 40px;
+      }
+
+      .quick-inline-label {
+        margin: 0 0 8px;
+        font-size: 11px;
+        font-weight: 600;
+        color: #8c8c8c;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+      }
+
+      .quick-prompts-inline .quick-btn {
+        padding: 10px 12px;
+      }
+
+      /* ── Input area ───────────────────────────────── */
+      .chat-input-area {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 12px 16px;
+        border-top: 1px solid #f0f0f0;
+        background: #fff;
+        flex-shrink: 0;
+      }
+
+      .chat-input-area textarea {
+        overflow-y: auto !important;
+        resize: none;
+        max-height: 120px;
+      }
+    `,
+  ],
+})
+export class ChatWidgetComponent implements AfterViewChecked, OnInit, OnDestroy {
+  @ViewChild('chatWindow') chatWindow?: ElementRef<HTMLDivElement>;
+  @ViewChild('messagesContainer') messagesContainer?: ElementRef<HTMLDivElement>;
+
+  private readonly chatService = inject(ChatService);
+  private readonly authService = inject(AuthService);
+  private readonly message = inject(NzMessageService);
+  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
+  private shouldScroll = false;
+  private readonly viewportPadding = {
+    top: 76,
+    right: 16,
+    bottom: 16,
+    left: 16,
+  };
+  private readonly anchorOffset = {
+    right: 25,
+    expandedBottom: 90,
+    minimizedBottom: 16,
+  };
+
+  // State
+  readonly isOpen = signal(false);
+  readonly sessions = signal<ChatSession[]>([]);
+  readonly activeSession = signal<ChatSession | null>(null);
+  readonly messages = signal<ChatMessage[]>([]);
+  readonly loadingSessions = signal(false);
+
+  // Draggable & Minimizable State
+  readonly position = signal<{ x: number; y: number }>({ x: 0, y: 0 });
+  readonly isMinimized = signal<boolean>(false);
+  private isDragging = false;
+  private dragStart = { x: 0, y: 0 };
+  private positionStart = { x: 0, y: 0 };
+
+  toggleMinimize() {
+    const nextMinimized = !this.isMinimized();
+    this.isMinimized.set(nextMinimized);
+    this.position.set(this.clampPosition(this.position(), nextMinimized));
+  }
+
+  onHeaderPointerDown(event: PointerEvent) {
+    if (event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    if (target.closest('button') || target.closest('a')) {
+      return;
+    }
+    this.isDragging = true;
+    this.dragStart = { x: event.clientX, y: event.clientY };
+    this.positionStart = { ...this.position() };
+    const header = event.currentTarget as HTMLElement;
+    header.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }
+
+  onHeaderPointerMove(event: PointerEvent) {
+    if (!this.isDragging) return;
+    const deltaX = event.clientX - this.dragStart.x;
+    const deltaY = event.clientY - this.dragStart.y;
+    this.position.set(
+      this.clampPosition({
+        x: this.positionStart.x + deltaX,
+        y: this.positionStart.y + deltaY,
+      }),
+    );
+  }
+
+  onHeaderPointerUp(event: PointerEvent) {
+    if (!this.isDragging) return;
+    this.isDragging = false;
+    const header = event.currentTarget as HTMLElement;
+    try {
+      if (header.hasPointerCapture(event.pointerId)) {
+        header.releasePointerCapture(event.pointerId);
+      }
+    } catch {
+      // Ignore release failures when the pointer was already released elsewhere.
+    }
+  }
+
+  @HostListener('window:resize')
+  onWindowResize() {
+    if (!this.isOpen()) {
+      return;
+    }
+    this.position.set(this.clampPosition(this.position()));
+  }
+
+  private openDrawer() {
+    this.isMinimized.set(false);
+    this.position.set({ x: 0, y: 0 });
+    this.isOpen.set(true);
+    if (this.sessions().length === 0) {
+      this.loadSessions();
+    }
+  }
+
+  closeDrawer() {
+    this.isDragging = false;
+    this.isMinimized.set(false);
+    this.position.set({ x: 0, y: 0 });
+    this.isOpen.set(false);
+  }
+
+  private clampPosition(position: { x: number; y: number }, minimized = this.isMinimized()) {
+    if (typeof window === 'undefined') {
+      return position;
+    }
+
+    const { width, height } = this.getChatWindowSize(minimized);
+    const baseBottom = minimized
+      ? this.anchorOffset.minimizedBottom
+      : this.anchorOffset.expandedBottom;
+    const maxX = this.anchorOffset.right - this.viewportPadding.right;
+    const maxY = baseBottom - this.viewportPadding.bottom;
+    const minX = Math.min(
+      this.viewportPadding.left + this.anchorOffset.right + width - window.innerWidth,
+      maxX,
+    );
+    const minY = Math.min(
+      this.viewportPadding.top + baseBottom + height - window.innerHeight,
+      maxY,
+    );
+
+    return {
+      x: Math.min(Math.max(position.x, minX), maxX),
+      y: Math.min(Math.max(position.y, minY), maxY),
+    };
+  }
+
+  private getChatWindowSize(minimized: boolean) {
+    const element = this.chatWindow?.nativeElement;
+    if (element && minimized === this.isMinimized()) {
+      return {
+        width: element.offsetWidth,
+        height: element.offsetHeight,
+      };
+    }
+
+    if (typeof window === 'undefined') {
+      return minimized ? { width: 280, height: 52 } : { width: 420, height: 580 };
+    }
+
+    return minimized
+      ? {
+          width: Math.min(280, window.innerWidth - 32),
+          height: 52,
+        }
+      : {
+          width: Math.min(420, window.innerWidth - 32),
+          height: Math.min(580, window.innerHeight - 112),
+        };
+  }
+
+  readonly loadingMessages = signal(false);
+  readonly sending = signal(false);
+  readonly creatingTicket = signal(false);
+  readonly replyState = signal<'idle' | 'thinking' | 'fallback' | 'done'>('idle');
+  readonly lastProvider = signal<string | null>(null);
+  private fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly userAvatarErrorSrc = signal<string | null>(null);
+
+  // Streaming state
+  readonly streaming = signal(false);
+  readonly streamingContent = signal('');
+  readonly streamingRendered = signal('');
+  readonly streamingProvider = signal<string | null>(null);
+  readonly fallbackActive = signal(false);
+  private streamSub: Subscription | null = null;
+  private renderDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  private accumulatedContent = '';
+
+  /** Whether current user is staff/admin (has access to analytics, reports) */
+  readonly isStaffOrAdmin = computed(() => {
+    const role = this.authService.currentUser()?.role;
+    return [
+      'ADMIN',
+      'DEVELOPER',
+      'TECHNICAL',
+      'MIS_HEAD',
+      'ITS_HEAD',
+      'DIRECTOR',
+      'SECRETARY',
+    ].includes(role || '');
+  });
+
+  readonly quickPrompts = computed<QuickPrompt[]>(() => {
+    const dept = roleToDepartment(this.authService.currentUser()?.role);
+    return [
+      ...COMMON_QUICK_PROMPTS,
+      ...(this.isStaffOrAdmin() ? staffQuickPrompts(dept) : USER_QUICK_PROMPTS),
+      HELP_QUICK_PROMPT,
+    ];
+  });
+
+  readonly currentUserAvatarSrc = computed(() => {
+    const avatarSrc = resolveAvatarUrl(this.authService.currentUser());
+    return avatarSrc && avatarSrc !== this.userAvatarErrorSrc() ? avatarSrc : null;
+  });
+
+  readonly currentUserInitial = computed(() =>
+    getAvatarInitial(this.authService.currentUser()?.name, this.authService.currentUser()?.email),
+  );
+
+  /** Subtitle text showing current AI provider or loading state */
+  readonly headerSubtitle = computed(() => {
+    const state = this.replyState();
+    const provider = this.lastProvider();
+    if (state === 'fallback') return 'Switching to backup AI model…';
+    if (state === 'thinking') return 'AI is thinking…';
+    if (provider && provider !== 'Offline') return `Powered by ${provider}`;
+    return 'Powered by Gemini';
+  });
+
+  /** Status line shown inside the typing bubble */
+  readonly typingStatus = computed(() => {
+    if (this.replyState() === 'fallback') return 'Switching to backup AI model, please wait…';
+    return 'ICT AI is thinking';
+  });
+
+  inputMessage = '';
+
+  ngOnInit() {
+    // Listen for external requests to open chat (e.g., from submit-ticket page)
+    this.chatService.openChat$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      this.openDrawer();
+      // Start a new chat session automatically
+      this.startNewChat();
+    });
+  }
+
+  toggleDrawer() {
+    if (this.isOpen()) {
+      this.closeDrawer();
+      return;
+    }
+
+    this.openDrawer();
+  }
+
+  loadSessions() {
+    this.loadingSessions.set(true);
+    this.chatService.getSessions().subscribe({
+      next: (sessions) => {
+        this.sessions.set(sessions);
+        this.loadingSessions.set(false);
+      },
+      error: () => {
+        this.message.error('Failed to load chat sessions');
+        this.loadingSessions.set(false);
+      },
+    });
+  }
+
+  startNewChat() {
+    this.chatService.createSession().subscribe({
+      next: (session) => {
+        this.sessions.update((s) => [session, ...s]);
+        this.activeSession.set(session);
+        this.messages.set([]);
+      },
+      error: () => this.message.error('Failed to start new chat'),
+    });
+  }
+
+  openSession(session: ChatSession) {
+    this.activeSession.set(session);
+    this.loadingMessages.set(true);
+    this.chatService.getSession(session.id).subscribe({
+      next: (full) => {
+        this.messages.set(full.messages || []);
+        this.loadingMessages.set(false);
+        this.scrollToBottom();
+      },
+      error: () => {
+        this.message.error('Failed to load chat');
+        this.loadingMessages.set(false);
+      },
+    });
+  }
+
+  backToSessions() {
+    this.activeSession.set(null);
+    this.messages.set([]);
+    this.loadSessions();
+  }
+
+  send() {
+    const text = this.inputMessage.trim();
+    if (!text || this.sending()) return;
+
+    const session = this.activeSession();
+    if (!session) return;
+
+    // Optimistically add user message
+    const tempMsg: ChatMessage = {
+      id: Date.now(),
+      sessionId: session.id,
+      role: 'USER',
+      content: text,
+      metadata: null,
+      createdAt: new Date().toISOString(),
+    };
+    this.messages.update((m) => [...m, tempMsg]);
+    this.inputMessage = '';
+    this.sending.set(true);
+    this.replyState.set('thinking');
+    this.lastProvider.set(null);
+    this.clearFallbackTimer();
+    this.clearStreaming();
+
+    // After a few seconds, tell the user we are falling back to a backup model
+    this.fallbackTimer = setTimeout(() => {
+      if (this.sending() && !this.streaming()) {
+        this.replyState.set('fallback');
+      }
+    }, 8000);
+    this.scrollToBottom();
+
+    // Try streaming first
+    this.streamSub = this.chatService.streamMessage(session.id, text).subscribe({
+      next: (chunk: ChatReplyChunk) => {
+        if (!this.streaming()) {
+          // First chunk — switch from typing indicator to live content
+          this.streaming.set(true);
+          this.accumulatedContent = '';
+          this.clearFallbackTimer();
+        }
+
+        this.accumulatedContent += chunk.chunk;
+        this.streamingContent.set(this.accumulatedContent);
+        this.streamingProvider.set(chunk.provider);
+
+        if (chunk.provider) {
+          this.lastProvider.set(chunk.provider);
+        }
+
+        this.updateStreamingHtml();
+
+        if (chunk.done) {
+          // Streaming complete — finalize the message
+          const assistantMsg: ChatMessage = {
+            id: Date.now() + 1,
+            sessionId: session.id,
+            role: 'ASSISTANT',
+            content: this.accumulatedContent,
+            metadata: null,
+            createdAt: new Date().toISOString(),
+          };
+          this.messages.update((m) => [...m, assistantMsg]);
+          this.replyState.set('done');
+          this.sending.set(false);
+          this.streaming.set(false);
+          this.streamingContent.set('');
+          this.streamingRendered.set('');
+          this.streamSub = null;
+          this.scrollToBottom();
+        }
+      },
+      error: () => {
+        // Streaming failed — show reconnecting indicator, fall back to mutation
+        this.fallbackActive.set(true);
+        this.streamSub = null;
+
+        this.chatService.sendMessage(session.id, text).subscribe({
+          next: (response) => {
+            // Replace any partial streaming content with the full response
+            const assistantMsg: ChatMessage = {
+              id: Date.now() + 1,
+              sessionId: session.id,
+              role: 'ASSISTANT',
+              content: response.reply,
+              metadata: response.metadata,
+              createdAt: new Date().toISOString(),
+            };
+            this.messages.update((m) => [...m, assistantMsg]);
+
+            if (response.session) {
+              this.activeSession.set(response.session);
+            }
+            this.lastProvider.set(response.provider || null);
+            this.replyState.set('done');
+            this.sending.set(false);
+            this.streaming.set(false);
+            this.streamingContent.set('');
+            this.streamingRendered.set('');
+            this.fallbackActive.set(false);
+            this.clearFallbackTimer();
+            this.scrollToBottom();
+          },
+          error: () => {
+            this.message.error('Failed to get AI response');
+            this.replyState.set('idle');
+            this.sending.set(false);
+            this.streaming.set(false);
+            this.streamingContent.set('');
+            this.streamingRendered.set('');
+            this.fallbackActive.set(false);
+            this.clearFallbackTimer();
+          },
+        });
+      },
+    });
+  }
+
+  private clearFallbackTimer() {
+    if (this.fallbackTimer !== null) {
+      clearTimeout(this.fallbackTimer);
+      this.fallbackTimer = null;
+    }
+  }
+
+  private clearStreaming() {
+    this.streaming.set(false);
+    this.streamingContent.set('');
+    this.streamingRendered.set('');
+    this.fallbackActive.set(false);
+    this.accumulatedContent = '';
+    if (this.streamSub) {
+      this.streamSub.unsubscribe();
+      this.streamSub = null;
+    }
+    if (this.renderDebounceTimer !== null) {
+      clearTimeout(this.renderDebounceTimer);
+      this.renderDebounceTimer = null;
+    }
+  }
+
+  private updateStreamingHtml() {
+    if (this.renderDebounceTimer !== null) {
+      clearTimeout(this.renderDebounceTimer);
+    }
+    this.renderDebounceTimer = setTimeout(() => {
+      this.streamingRendered.set(this.renderMarkdown(this.streamingContent()));
+      this.renderDebounceTimer = null;
+      this.scrollToBottom();
+    }, 80);
+  }
+
+  ngOnDestroy() {
+    this.clearStreaming();
+    this.clearFallbackTimer();
+  }
+
+  sendQuick(text: string) {
+    this.inputMessage = text;
+    this.send();
+  }
+
+  /** Send on Enter, allow Shift+Enter for new lines */
+  onKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      this.send();
+    }
+  }
+
+  deleteSession(id: number) {
+    this.chatService.deleteSession(id).subscribe({
+      next: () => {
+        this.sessions.update((s) => s.filter((x) => x.id !== id));
+        this.message.success('Chat deleted');
+      },
+      error: () => this.message.error('Failed to delete chat'),
+    });
+  }
+
+  hasTicketData(content: string): boolean {
+    return content.includes('```ticket-data');
+  }
+
+  hasQuickOptions(content: string): boolean {
+    return content.includes('```show-quick-options');
+  }
+
+  onCurrentUserAvatarError(): boolean {
+    const failedSrc = resolveAvatarUrl(this.authService.currentUser());
+    if (failedSrc) {
+      this.userAvatarErrorSrc.set(failedSrc);
+    }
+    return false;
+  }
+
+  createTicketFromMessage(content: string) {
+    const match = content.match(/```ticket-data\s*([\s\S]*?)```/);
+    if (!match) return;
+
+    let ticketData: any;
+    try {
+      ticketData = JSON.parse(match[1].trim());
+    } catch {
+      this.message.error('Could not parse ticket data');
+      return;
+    }
+
+    const session = this.activeSession();
+    if (!session) return;
+
+    this.creatingTicket.set(true);
+    this.chatService
+      .createTicketFromChat({
+        sessionId: session.id,
+        title: ticketData.title,
+        description: ticketData.description,
+        type: ticketData.type || 'ITS',
+        priority: ticketData.priority,
+        category: ticketData.category,
+      })
+      .subscribe({
+        next: (ticket) => {
+          this.message.success(`Ticket ${ticket.ticketNumber} created!`);
+          this.creatingTicket.set(false);
+
+          // Add system message
+          const sysMsg: ChatMessage = {
+            id: Date.now(),
+            sessionId: session.id,
+            role: 'SYSTEM',
+            content: `✅ Ticket [${ticket.ticketNumber}](/tickets/${ticket.ticketNumber}) has been created. You can track its status anytime by asking me.`,
+            // content: `✅ Ticket **${ticket.ticketNumber}** has been created. You can track its status anytime by asking me.`,
+            metadata: null,
+            createdAt: new Date().toISOString(),
+          };
+          this.messages.update((m) => [...m, sysMsg]);
+          this.activeSession.update((s) =>
+            s ? { ...s, status: 'TICKET_CREATED', ticketId: ticket.id } : s,
+          );
+          this.scrollToBottom();
+        },
+        error: () => {
+          this.message.error('Failed to create ticket');
+          this.creatingTicket.set(false);
+        },
+      });
+  }
+
+  /**
+   * Handle clicks inside message bubbles — intercept report download links
+   */
+  onMessageClick(event: MouseEvent) {
+    const target = event.target as HTMLElement;
+    const link = target.closest('a') as HTMLAnchorElement;
+    if (link) {
+      const href = link.getAttribute('href') || '';
+      // Intercept report download links
+      if (href.startsWith('/reports/download')) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.downloadReport(href);
+        return;
+      }
+      // Intercept KB links for in-app navigation
+      if (href.startsWith('/knowledge-base/')) {
+        event.preventDefault();
+        event.stopPropagation();
+        const articleId = href.split('/knowledge-base/')[1];
+        this.router.navigate(['/knowledge-base'], { queryParams: { article: articleId } });
+        return;
+      }
+
+      if (href.startsWith('/tickets/')) {
+        event.preventDefault();
+        event.stopPropagation();
+        this.router.navigate([href]);
+        return;
+      }
+    }
+  }
+
+  /**
+   * Download an Excel report via the REST endpoint with auth
+   */
+  private downloadReport(reportPath: string) {
+    const token = this.authService.getToken();
+    if (!token) {
+      this.message.error('Please log in to download reports');
+      return;
+    }
+
+    // Build the full URL from the API base
+    const baseUrl = environment.apiUrl.replace('/graphql', '');
+    const fullUrl = `${baseUrl}${reportPath}`;
+
+    this.message.loading('Generating report...');
+
+    fetch(fullUrl, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => {
+        if (!res.ok) {
+          return res.json().then((err) => {
+            throw new Error(err.error || 'Download failed');
+          });
+        }
+        return res.blob();
+      })
+      .then((blob) => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        // Extract filename from reportPath or use default
+        const type = new URLSearchParams(reportPath.split('?')[1]).get('type') || 'report';
+        a.download = `ICT_Report_${type}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        a.remove();
+        this.message.success('Report downloaded!');
+      })
+      .catch((err) => {
+        this.message.error(err.message || 'Failed to download report');
+      });
+  }
+
+  renderMarkdown(content: string): string {
+    // Strip assistant control blocks before rendering markdown.
+    const src = content
+      .replace(TICKET_DATA_BLOCK_REGEX, '')
+      .replace(QUICK_OPTIONS_BLOCK_REGEX, '')
+      .trim();
+
+    // Full GFM parse: headings, tables, lists, code blocks, bold, italic, links
+    let html = marked.parse(src) as string;
+
+    // Post-process: style KB article links  → [KB: Title](kb:ID) parsed as <a href="kb:ID">
+    html = html.replace(
+      /<a href="kb:(\d+)">([^<]+)<\/a>/gi,
+      '<a class="kb-link" href="/knowledge-base/$1">📖 $2</a>',
+    );
+
+    // Post-process: style report download links → [text](/reports/download?...)
+    html = html.replace(
+      /<a href="(\/reports\/download[^"]*)"[^>]*>([^<]+)<\/a>/gi,
+      '<a class="report-download-link" href="$1">📥 $2</a>',
+    );
+
+    return html;
+  }
+
+  formatDate(dateStr: string): string {
+    const date = /^\d+$/.test(dateStr) ? new Date(parseInt(dateStr, 10)) : new Date(dateStr);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d ago`;
+    return date.toLocaleDateString();
+  }
+
+  ngAfterViewChecked() {
+    if (this.shouldScroll) {
+      const el = this.messagesContainer?.nativeElement;
+      if (el) {
+        el.scrollTop = el.scrollHeight;
+        this.shouldScroll = false;
+      }
+    }
+  }
+
+  private scrollToBottom() {
+    this.shouldScroll = true;
+  }
+}

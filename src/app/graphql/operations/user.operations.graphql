@@ -1,0 +1,69 @@
+# User Fragment - reusable user fields
+fragment UserFields on User {
+  id
+  email
+  name
+  role
+  avatarUrl
+  picture
+  skills
+}
+
+# Query to get current user
+query GetMe {
+  me {
+    ...UserFields
+  }
+}
+
+# Query to get all users (admin only)
+query GetAllUsers {
+  users {
+    ...UserFields
+  }
+}
+
+# Query to get single user by ID
+query GetUser($id: Int!) {
+  user(id: $id) {
+    ...UserFields
+  }
+}
+
+# Mutation to update current user's profile
+mutation UpdateMyProfile($input: UpdateProfileInput!) {
+  updateMyProfile(input: $input) {
+    ...UserFields
+  }
+}
+
+# Mutation to set password
+mutation SetMyPassword($password: String!) {
+  setMyPassword(password: $password) {
+    id
+  }
+}
+
+# Mutation to upsert user from Auth0
+mutation UpsertMe {
+  upsertMe {
+    user {
+      ...UserFields
+    }
+    created
+  }
+}
+
+# Mutation to set user role (admin only)
+mutation SetUserRole($id: Int!, $role: Role!) {
+  setUserRole(id: $id, role: $role) {
+    ...UserFields
+  }
+}
+
+# Mutation to update user skills (admin only)
+mutation UpdateUserSkills($userId: Int!, $skills: [String!]!) {
+  updateUserSkills(userId: $userId, skills: $skills) {
+    ...UserFields
+  }
+}
